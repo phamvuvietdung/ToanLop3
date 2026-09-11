@@ -7,15 +7,26 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import { getFallbackQuestionsForTopic } from "./server/fallbackQuestions";
 
-function getAIClient() {
-  return new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+function getAIClient(apiKey?: string) {
+  const key = (apiKey && typeof apiKey === "string" ? apiKey.trim() : "") || process.env.GEMINI_API_KEY || "";
+  if (!key) {
+    throw new Error("MISSING_API_KEY");
+  }
+  return new GoogleGenAI({
+    apiKey: key,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      },
+    },
+  });
 }
 
 // In-memory cache to save API quota for repeated topics
 const topicCache = new Map<string, { timestamp: number; questions: any[] }>();
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
-async function generateWithGemini(topic: string, count: number, modelName: string) {
+async function generateWithGemini(topic: string, count: number, modelName: string, apiKey?: string) {
   const prompt = `Bạn là một giáo viên Toán lớp 3 nhiệt huyết. Nhiệm vụ của bạn là tạo ra chính xác ${count} câu hỏi trắc nghiệm Toán học bám sát nội dung bài học: "${topic}" trong Sách giáo khoa Toán 3 (Kết nối tri thức với cuộc sống).
 
 ĐIỀU KIỆN QUAN TRỌNG: 
@@ -34,7 +45,7 @@ Tuân thủ định dạng JSON nghiêm ngặt. Trả về một mảng gồm ${
 - explanation: Lời giải chi tiết
 `;
 
-  const ai = getAIClient();
+  const ai = getAIClient(apiKey);
   const response = await ai.models.generateContent({
     model: modelName,
     contents: [
@@ -76,6 +87,32 @@ Tuân thủ định dạng JSON nghiêm ngặt. Trả về một mảng gồm ${
   return JSON.parse(text);
 }
 
+function is429Error(err: any): boolean {
+  if (!err) return false;
+  if (err.status === 429) return true;
+  const raw = `${err?.message || ""} ${err?.statusText || ""} ${JSON.stringify(err || {})}`.toLowerCase();
+  return (
+    raw.includes("429") ||
+    raw.includes("resource_exhausted") ||
+    raw.includes("quota exceeded") ||
+    raw.includes("too many requests") ||
+    raw.includes("rate limit") ||
+    raw.includes("quota")
+  );
+}
+
+function isInvalidKeyError(err: any): boolean {
+  if (!err) return false;
+  if (err.status === 401 || err.status === 403) return true;
+  const raw = `${err?.message || ""} ${JSON.stringify(err || {})}`.toLowerCase();
+  return (
+    (err.status === 400 && raw.includes("key")) ||
+    raw.includes("api_key_invalid") ||
+    raw.includes("api key not valid") ||
+    raw.includes("permission_denied")
+  );
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -84,51 +121,78 @@ async function startServer() {
   app.use(express.urlencoded({ extended: true }));
 
   app.post("/api/generate-questions-by-topic", async (req, res) => {
-    const { topic, count = 10, forceRefresh = false } = req.body;
+    const { topic, count = 10, forceRefresh = false, apiKey } = req.body;
     if (!topic) {
       return res.status(400).json({ error: "Thiếu thông tin chủ đề (topic)" });
     }
 
-    // Check cache first to avoid burning quota
-    const cacheKey = `${topic.trim()}_${count}`;
+    const effectiveKey = (apiKey && typeof apiKey === "string" ? apiKey.trim() : "") || process.env.GEMINI_API_KEY || "";
+    if (!effectiveKey) {
+      return res.status(400).json({
+        error: "Vui lòng nhập Gemini API Key để bắt đầu tạo câu hỏi!",
+        code: "MISSING_KEY",
+      });
+    }
+
+    // Check cache first to avoid burning quota unnecessarily
+    const keyFingerprint = effectiveKey.slice(-6);
+    const cacheKey = `${keyFingerprint}_${topic.trim()}_${count}`;
     const cached = topicCache.get(cacheKey);
     if (!forceRefresh && cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
       return res.json({ questions: cached.questions, fromCache: true });
     }
 
-    // Attempt 1: Fast stable model gemini-3.6-flash
+    // Attempt 1: Fast stable model gemini-3.8-flash per gemini-api skill
     try {
-      const questions = await generateWithGemini(topic, count, "gemini-3.6-flash");
+      const questions = await generateWithGemini(topic, count, "gemini-3.8-flash", effectiveKey);
       topicCache.set(cacheKey, { timestamp: Date.now(), questions });
       return res.json({ questions });
     } catch (errPrimary: any) {
-      const is429 = errPrimary?.status === 429 ||
-                    errPrimary?.message?.includes("429") ||
-                    errPrimary?.message?.includes("RESOURCE_EXHAUSTED") ||
-                    errPrimary?.message?.includes("quota");
+      console.warn(`[Gemini API] Lỗi tạo câu hỏi:`, errPrimary?.status, errPrimary?.message);
 
-      console.warn(`[Gemini API] Lỗi model chính (429 = ${is429}):`, errPrimary?.message);
-
-      // If 429 rate limited, wait 1.5 seconds and attempt with gemini-3.1-flash-lite
-      if (is429) {
-        try {
-          await new Promise((resolve) => setTimeout(resolve, 1500));
-          const questions = await generateWithGemini(topic, count, "gemini-3.1-flash-lite");
-          topicCache.set(cacheKey, { timestamp: Date.now(), questions });
-          return res.json({ questions, fallbackModelUsed: true });
-        } catch (errSecondary: any) {
-          console.warn("[Gemini API] Fallback model cũng gặp giới hạn rate limit/quota:", errSecondary?.message);
-        }
+      // Check 429 quota exhausted error immediately
+      if (is429Error(errPrimary)) {
+        return res.status(429).json({
+          error: "API Key hiện tại đã hết hạn mức (lỗi 429). Vui lòng nhập hoặc đổi sang API Key khác để tiếp tục!",
+          code: 429,
+        });
       }
 
-      // If API quota is completely exhausted, gracefully use intelligent offline fallback
-      console.log(`[Fallback] Kích hoạt ngân hàng câu hỏi dự phòng cho chủ đề: "${topic}"`);
-      const fallbackQuestions = getFallbackQuestionsForTopic(topic, count);
-      return res.json({
-        questions: fallbackQuestions,
-        isFallback: true,
-        notice: "Đang sử dụng ngân hàng bài tập dự phòng do dịch vụ AI tạm thời đạt giới hạn lượt gọi (429)."
-      });
+      // Check invalid key
+      if (isInvalidKeyError(errPrimary)) {
+        return res.status(401).json({
+          error: "API Key không hợp lệ hoặc đã bị vô hiệu hóa. Vui lòng kiểm tra và nhập lại API Key!",
+          code: 401,
+        });
+      }
+
+      // Attempt fallback model gemini-3.1-flash-lite if temporary model glitch
+      try {
+        const questions = await generateWithGemini(topic, count, "gemini-3.1-flash-lite", effectiveKey);
+        topicCache.set(cacheKey, { timestamp: Date.now(), questions });
+        return res.json({ questions, fallbackModelUsed: true });
+      } catch (errSecondary: any) {
+        console.warn("[Gemini API] Lỗi model dự phòng:", errSecondary?.status, errSecondary?.message);
+
+        if (is429Error(errSecondary)) {
+          return res.status(429).json({
+            error: "API Key hiện tại đã hết hạn mức (lỗi 429). Vui lòng nhập hoặc đổi sang API Key khác để tiếp tục!",
+            code: 429,
+          });
+        }
+
+        if (isInvalidKeyError(errSecondary)) {
+          return res.status(401).json({
+            error: "API Key không hợp lệ hoặc đã bị vô hiệu hóa. Vui lòng kiểm tra và nhập lại API Key!",
+            code: 401,
+          });
+        }
+
+        return res.status(500).json({
+          error: errSecondary?.message || errPrimary?.message || "Không thể tạo câu hỏi lúc này. Vui lòng thử lại sau!",
+          code: 500,
+        });
+      }
     }
   });
 

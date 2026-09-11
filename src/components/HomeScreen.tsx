@@ -5,40 +5,16 @@ import { Question, Lesson } from '../types';
 import { TOC } from '../data/toc';
 
 interface HomeScreenProps {
-  onGenerateStart: () => void;
-  onGenerateSuccess: (questions: Question[], lesson: Lesson, notice?: string) => void;
-  onGenerateError: (error: string) => void;
+  onSelectLesson: (lesson: Lesson) => void;
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
-  onGenerateStart,
-  onGenerateSuccess,
-  onGenerateError,
+  onSelectLesson,
 }) => {
   const [expandedChapter, setExpandedChapter] = useState<string | null>(TOC[0].id);
 
-  const handleSelectLesson = async (lesson: Lesson) => {
-    onGenerateStart();
-    try {
-      const response = await fetch('/api/generate-questions-by-topic', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topic: lesson.title,
-          count: 10
-        }),
-      });
-      
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || 'Có lỗi xảy ra');
-      }
-      
-      const data = await response.json();
-      onGenerateSuccess(data.questions, lesson, data.notice);
-    } catch (err: any) {
-      onGenerateError(err.message || 'Không thể tạo câu hỏi, vui lòng thử lại.');
-    }
+  const handleSelectLesson = (lesson: Lesson) => {
+    onSelectLesson(lesson);
   };
 
   return (

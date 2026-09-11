@@ -9,6 +9,8 @@ import { EndScreen } from './components/EndScreen';
 import { Header } from './components/Header';
 import { HomeScreen } from './components/HomeScreen';
 import { LoadingScreen } from './components/LoadingScreen';
+import { ApiKeyModal } from './components/ApiKeyModal';
+import { getStoredApiKey, hasStoredApiKey } from './utils/apiKeyStorage';
 import { sound } from './utils/audio';
 
 export default function App() {
@@ -25,6 +27,17 @@ export default function App() {
   const [showHint, setShowHint] = useState<boolean>(false);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
 
+  // Gemini API Key modal & pending action states
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState<boolean>(false);
+  const [apiKeyErrorMessage, setApiKeyErrorMessage] = useState<string | null>(null);
+  const [apiKeyInfoMessage, setApiKeyInfoMessage] = useState<string | null>(null);
+  const [hasApiKey, setHasApiKey] = useState<boolean>(() => hasStoredApiKey());
+  const [pendingAction, setPendingAction] = useState<
+    | { type: 'lesson'; lesson: Lesson }
+    | { type: 'generate_new'; lesson: Lesson }
+    | null
+  >(null);
+
   // Bear cheer state
   const [bearState, setBearState] = useState<BearState>('normal');
   const [bearMessage, setBearMessage] = useState<string>('Chào bé! Cùng học Toán nhé! Mỗi câu chỉ trả lời 1 lần thôi nhé! 🐻');
@@ -37,6 +50,19 @@ export default function App() {
     sound.enabled = !soundEnabled;
     setSoundEnabled(!soundEnabled);
   }, [soundEnabled]);
+
+  // Open API Key Modal
+  const handleOpenApiKeyModal = useCallback((errorMsg?: string, infoMsg?: string) => {
+    setApiKeyErrorMessage(errorMsg || null);
+    setApiKeyInfoMessage(infoMsg || null);
+    setIsApiKeyModalOpen(true);
+  }, []);
+
+  const handleCloseApiKeyModal = useCallback(() => {
+    setIsApiKeyModalOpen(false);
+    setApiKeyErrorMessage(null);
+    setApiKeyInfoMessage(null);
+  }, []);
 
   // Select option before submission
   const handleSelectOption = useCallback((index: number) => {
@@ -134,12 +160,104 @@ export default function App() {
     setAppState('playing');
   }, []);
 
-  // Generate a fresh set of 10 questions for the current lesson
-  const handleGenerateNewQuestions = useCallback(async () => {
+  // Handler when user chooses a lesson from the Home Screen
+  const handleStartLesson = useCallback(async (lesson: Lesson, overrideKey?: string) => {
+    const key = overrideKey || getStoredApiKey();
+
+    if (!key) {
+      setPendingAction({ type: 'lesson', lesson });
+      handleOpenApiKeyModal(
+        null,
+        'Vui lòng nhập Gemini API Key để bắt đầu tạo câu hỏi bài học nhé! 🔑'
+      );
+      setBearState('thinking');
+      setBearMessage('Bé hoặc phụ huynh hãy nhập Gemini API Key để bắt đầu nhé! 🐻');
+      return;
+    }
+
+    setAppState('loading');
+    try {
+      const response = await fetch('/api/generate-questions-by-topic', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: lesson.title,
+          count: 10,
+          apiKey: key,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        // 429 Rate Limit / Quota Exceeded
+        if (response.status === 429 || data.code === 429 || data.error?.includes('429')) {
+          setAppState('home');
+          setPendingAction({ type: 'lesson', lesson });
+          handleOpenApiKeyModal(
+            'API Key hiện tại đã hết hạn mức (lỗi 429). Vui lòng nhập hoặc đổi sang API Key khác để tiếp tục!',
+            null
+          );
+          setBearState('sad');
+          setBearMessage('API Key đã hết hạn mức (lỗi 429). Bé hoặc phụ huynh hãy đổi sang key khác nhé! 🐻');
+          return;
+        }
+
+        // 401 Invalid Key
+        if (response.status === 401 || data.code === 401) {
+          setAppState('home');
+          setPendingAction({ type: 'lesson', lesson });
+          handleOpenApiKeyModal(
+            data.error || 'API Key không hợp lệ. Vui lòng kiểm tra lại!',
+            null
+          );
+          return;
+        }
+
+        throw new Error(data.error || 'Có lỗi xảy ra khi tạo câu hỏi');
+      }
+
+      setQuestions(data.questions);
+      setCurrentLesson(lesson);
+      setCurrentIdx(0);
+      setScore(0);
+      setSelectedOption(null);
+      setIsChecked(false);
+      setIsAnsweredCorrectly(false);
+      setUserAnswers({});
+      setShowHint(false);
+      setPendingAction(null);
+      setBearState('normal');
+      setBearMessage(
+        data.notice
+          ? 'Gấu đã mở bài tập cho bé! Mỗi câu chỉ làm 1 lần, hãy tính thật cẩn thận nhé! 🐻'
+          : 'Gấu đã chuẩn bị xong 10 câu hỏi! Mỗi câu chỉ làm 1 lần, bé cố gắng nhé! 🐻'
+      );
+      setAppState('playing');
+    } catch (err: any) {
+      setAppState('home');
+      alert(err.message || 'Không thể tạo câu hỏi mới. Vui lòng thử lại.');
+    }
+  }, [handleOpenApiKeyModal]);
+
+  // Generate a fresh set of 10 questions for the current lesson from EndScreen
+  const handleGenerateNewQuestions = useCallback(async (overrideKey?: string) => {
     if (!currentLesson) {
       setAppState('home');
       return;
     }
+
+    const key = overrideKey || getStoredApiKey();
+
+    if (!key) {
+      setPendingAction({ type: 'generate_new', lesson: currentLesson });
+      handleOpenApiKeyModal(
+        null,
+        'Vui lòng nhập Gemini API Key để tạo bộ câu hỏi mới nhé! 🔑'
+      );
+      return;
+    }
+
     setAppState('loading');
     try {
       const response = await fetch('/api/generate-questions-by-topic', {
@@ -149,15 +267,39 @@ export default function App() {
           topic: currentLesson.title,
           count: 10,
           forceRefresh: true,
+          apiKey: key,
         }),
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || 'Có lỗi xảy ra');
+        // 429 Rate Limit / Quota Exceeded: keep appState at 'end' to protect user progress!
+        if (response.status === 429 || data.code === 429 || data.error?.includes('429')) {
+          setAppState('end');
+          setPendingAction({ type: 'generate_new', lesson: currentLesson });
+          handleOpenApiKeyModal(
+            'API Key hiện tại đã hết hạn mức (lỗi 429). Vui lòng nhập hoặc đổi sang API Key khác để tiếp tục!',
+            null
+          );
+          setBearState('sad');
+          setBearMessage('API Key đã hết hạn mức (lỗi 429). Hãy đổi sang API Key khác để tiếp tục nhé! 🐻');
+          return;
+        }
+
+        if (response.status === 401 || data.code === 401) {
+          setAppState('end');
+          setPendingAction({ type: 'generate_new', lesson: currentLesson });
+          handleOpenApiKeyModal(
+            data.error || 'API Key không hợp lệ. Vui lòng kiểm tra lại!',
+            null
+          );
+          return;
+        }
+
+        throw new Error(data.error || 'Có lỗi xảy ra');
       }
 
-      const data = await response.json();
       setQuestions(data.questions);
       setCurrentIdx(0);
       setScore(0);
@@ -166,6 +308,7 @@ export default function App() {
       setIsAnsweredCorrectly(false);
       setUserAnswers({});
       setShowHint(false);
+      setPendingAction(null);
       setBearState('normal');
       setBearMessage(
         data.notice
@@ -174,30 +317,32 @@ export default function App() {
       );
       setAppState('playing');
     } catch (err: any) {
-      alert(err.message || 'Không thể tạo câu hỏi mới. Vui lòng thử lại.');
       setAppState('end');
+      alert(err.message || 'Không thể tạo câu hỏi mới. Vui lòng thử lại.');
     }
-  }, [currentLesson]);
+  }, [currentLesson, handleOpenApiKeyModal]);
 
-  // Handler when user chooses a lesson from the Home Screen
-  const handlePlayGenerated = useCallback((newQuestions: Question[], lesson: Lesson, notice?: string) => {
-    setQuestions(newQuestions);
-    setCurrentLesson(lesson);
-    setCurrentIdx(0);
-    setScore(0);
-    setSelectedOption(null);
-    setIsChecked(false);
-    setIsAnsweredCorrectly(false);
-    setUserAnswers({});
-    setShowHint(false);
-    setBearState('normal');
-    setBearMessage(
-      notice
-        ? 'Gấu đã mở bài tập cho bé! Mỗi câu chỉ làm 1 lần, hãy tính thật cẩn thận nhé! 🐻'
-        : 'Gấu đã chuẩn bị xong 10 câu hỏi! Mỗi câu chỉ làm 1 lần, bé cố gắng nhé! 🐻'
-    );
-    setAppState('playing');
-  }, []);
+  // Handler when user saves a new API key in the modal
+  const handleSaveApiKey = useCallback((newKey: string) => {
+    setHasApiKey(true);
+    setIsApiKeyModalOpen(false);
+    setApiKeyErrorMessage(null);
+    setApiKeyInfoMessage(null);
+
+    // If an action was pending (e.g. stopped due to missing key or 429), resume it seamlessly!
+    if (pendingAction) {
+      const action = pendingAction;
+      setPendingAction(null);
+      if (action.type === 'lesson') {
+        handleStartLesson(action.lesson, newKey);
+      } else if (action.type === 'generate_new') {
+        handleGenerateNewQuestions(newKey);
+      }
+    } else {
+      setBearState('celebrate');
+      setBearMessage('Đã lưu Gemini API Key thành công! Bé cùng bắt đầu ôn tập nhé! 🐻✨');
+    }
+  }, [pendingAction, handleStartLesson, handleGenerateNewQuestions]);
 
   const questionIds = questions.map((q) => q.id);
 
@@ -221,18 +366,13 @@ export default function App() {
           soundEnabled={soundEnabled}
           onToggleSound={handleToggleSound}
           onReset={handleBackToHome}
+          hasApiKey={hasApiKey}
+          onOpenApiKeyModal={() => handleOpenApiKeyModal()}
         />
 
         {appState === 'home' && (
           <div className="my-auto">
-            <HomeScreen 
-              onGenerateStart={() => setAppState('loading')} 
-              onGenerateSuccess={handlePlayGenerated} 
-              onGenerateError={(err) => { 
-                alert(err); 
-                setAppState('home'); 
-              }} 
-            />
+            <HomeScreen onSelectLesson={handleStartLesson} />
           </div>
         )}
 
@@ -277,12 +417,21 @@ export default function App() {
               userAnswers={userAnswers}
               currentLesson={currentLesson}
               onRetrySameQuestions={handleRetrySameQuestions}
-              onGenerateNewQuestions={handleGenerateNewQuestions}
+              onGenerateNewQuestions={() => handleGenerateNewQuestions()}
               onBackToHome={handleBackToHome}
             />
           </div>
         )}
       </main>
+
+      {/* API Key Modal */}
+      <ApiKeyModal
+        isOpen={isApiKeyModalOpen}
+        onClose={handleCloseApiKeyModal}
+        onSave={handleSaveApiKey}
+        errorMessage={apiKeyErrorMessage}
+        infoMessage={apiKeyInfoMessage}
+      />
 
       <footer className="relative z-10 py-3 text-center text-xs md:text-sm font-bold text-sky-900/70">
         <span>Bé Giỏi Toán Lớp 3 • Kết nối tri thức với cuộc sống 🌟</span>

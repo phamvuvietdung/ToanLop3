@@ -1,17 +1,21 @@
 import React from 'react';
-import { Volume2, VolumeX, BookOpen } from 'lucide-react';
+import { Volume2, VolumeX, BookOpen, KeyRound } from 'lucide-react';
 import { sound } from '../utils/audio';
 
 interface HeaderProps {
   soundEnabled: boolean;
   onToggleSound: () => void;
   onReset: () => void;
+  hasApiKey: boolean;
+  onOpenApiKeyModal: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   soundEnabled,
   onToggleSound,
   onReset,
+  hasApiKey,
+  onOpenApiKeyModal,
 }) => {
   return (
     <header className="flex items-center justify-between gap-3 mb-6 bg-white/80 backdrop-blur-md px-4 md:px-6 py-3.5 rounded-3xl shadow-md border-2 border-sky-100">
@@ -30,6 +34,31 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-2">
+        {/* Gemini API Key Button */}
+        <button
+          type="button"
+          onClick={() => {
+            sound.playSelect();
+            onOpenApiKeyModal();
+          }}
+          title={hasApiKey ? 'Cài đặt Gemini API Key (Đã lưu)' : 'Chưa nhập Gemini API Key'}
+          className={`flex items-center gap-1.5 px-3 py-2.5 rounded-2xl font-extrabold text-xs md:text-sm border-2 transition-all cursor-pointer shadow-sm ${
+            hasApiKey
+              ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300'
+              : 'bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-300 animate-pulse'
+          }`}
+        >
+          <KeyRound className="w-4 h-4 text-emerald-600" />
+          <span className="hidden sm:inline">
+            {hasApiKey ? 'API Key' : 'Nhập API Key'}
+          </span>
+          <span
+            className={`w-2 h-2 rounded-full ${
+              hasApiKey ? 'bg-emerald-500 ring-2 ring-emerald-200' : 'bg-amber-500 ring-2 ring-amber-200'
+            }`}
+          />
+        </button>
+
         {/* Sound Toggle */}
         <button
           type="button"
