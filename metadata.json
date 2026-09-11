@@ -1,0 +1,8 @@
+{
+  "name": "ToanLop3-github",
+  "description": "Trò chơi ôn tập Toán tương tác sinh động cho học sinh lớp 3, học kỳ 1, dựa trên sách giáo khoa Kết nối tri thức.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
