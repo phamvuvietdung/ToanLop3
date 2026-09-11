@@ -11,6 +11,7 @@ import { HomeScreen } from './components/HomeScreen';
 import { LoadingScreen } from './components/LoadingScreen';
 import { ApiKeyModal } from './components/ApiKeyModal';
 import { getStoredApiKey, hasStoredApiKey } from './utils/apiKeyStorage';
+import { requestQuestions, ApiError } from './utils/questionService';
 import { sound } from './utils/audio';
 
 export default function App() {
@@ -177,45 +178,7 @@ export default function App() {
 
     setAppState('loading');
     try {
-      const response = await fetch('/api/generate-questions-by-topic', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topic: lesson.title,
-          count: 10,
-          apiKey: key,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        // 429 Rate Limit / Quota Exceeded
-        if (response.status === 429 || data.code === 429 || data.error?.includes('429')) {
-          setAppState('home');
-          setPendingAction({ type: 'lesson', lesson });
-          handleOpenApiKeyModal(
-            'API Key hiện tại đã hết hạn mức (lỗi 429). Vui lòng nhập hoặc đổi sang API Key khác để tiếp tục!',
-            null
-          );
-          setBearState('sad');
-          setBearMessage('API Key đã hết hạn mức (lỗi 429). Bé hoặc phụ huynh hãy đổi sang key khác nhé! 🐻');
-          return;
-        }
-
-        // 401 Invalid Key
-        if (response.status === 401 || data.code === 401) {
-          setAppState('home');
-          setPendingAction({ type: 'lesson', lesson });
-          handleOpenApiKeyModal(
-            data.error || 'API Key không hợp lệ. Vui lòng kiểm tra lại!',
-            null
-          );
-          return;
-        }
-
-        throw new Error(data.error || 'Có lỗi xảy ra khi tạo câu hỏi');
-      }
+      const data = await requestQuestions(lesson.title, 10, key, false);
 
       setQuestions(data.questions);
       setCurrentLesson(lesson);
@@ -236,6 +199,26 @@ export default function App() {
       setAppState('playing');
     } catch (err: any) {
       setAppState('home');
+      if (err instanceof ApiError && err.code === 429) {
+        setPendingAction({ type: 'lesson', lesson });
+        handleOpenApiKeyModal(
+          'API Key hiện tại đã hết hạn mức (lỗi 429). Vui lòng nhập hoặc đổi sang API Key khác để tiếp tục!',
+          null
+        );
+        setBearState('sad');
+        setBearMessage('API Key đã hết hạn mức (lỗi 429). Bé hoặc phụ huynh hãy đổi sang key khác nhé! 🐻');
+        return;
+      }
+
+      if (err instanceof ApiError && err.code === 401) {
+        setPendingAction({ type: 'lesson', lesson });
+        handleOpenApiKeyModal(
+          err.message || 'API Key không hợp lệ. Vui lòng kiểm tra lại!',
+          null
+        );
+        return;
+      }
+
       alert(err.message || 'Không thể tạo câu hỏi mới. Vui lòng thử lại.');
     }
   }, [handleOpenApiKeyModal]);
@@ -260,45 +243,7 @@ export default function App() {
 
     setAppState('loading');
     try {
-      const response = await fetch('/api/generate-questions-by-topic', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topic: currentLesson.title,
-          count: 10,
-          forceRefresh: true,
-          apiKey: key,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        // 429 Rate Limit / Quota Exceeded: keep appState at 'end' to protect user progress!
-        if (response.status === 429 || data.code === 429 || data.error?.includes('429')) {
-          setAppState('end');
-          setPendingAction({ type: 'generate_new', lesson: currentLesson });
-          handleOpenApiKeyModal(
-            'API Key hiện tại đã hết hạn mức (lỗi 429). Vui lòng nhập hoặc đổi sang API Key khác để tiếp tục!',
-            null
-          );
-          setBearState('sad');
-          setBearMessage('API Key đã hết hạn mức (lỗi 429). Hãy đổi sang API Key khác để tiếp tục nhé! 🐻');
-          return;
-        }
-
-        if (response.status === 401 || data.code === 401) {
-          setAppState('end');
-          setPendingAction({ type: 'generate_new', lesson: currentLesson });
-          handleOpenApiKeyModal(
-            data.error || 'API Key không hợp lệ. Vui lòng kiểm tra lại!',
-            null
-          );
-          return;
-        }
-
-        throw new Error(data.error || 'Có lỗi xảy ra');
-      }
+      const data = await requestQuestions(currentLesson.title, 10, key, true);
 
       setQuestions(data.questions);
       setCurrentIdx(0);
@@ -318,6 +263,26 @@ export default function App() {
       setAppState('playing');
     } catch (err: any) {
       setAppState('end');
+      if (err instanceof ApiError && err.code === 429) {
+        setPendingAction({ type: 'generate_new', lesson: currentLesson });
+        handleOpenApiKeyModal(
+          'API Key hiện tại đã hết hạn mức (lỗi 429). Vui lòng nhập hoặc đổi sang API Key khác để tiếp tục!',
+          null
+        );
+        setBearState('sad');
+        setBearMessage('API Key đã hết hạn mức (lỗi 429). Hãy đổi sang API Key khác để tiếp tục nhé! 🐻');
+        return;
+      }
+
+      if (err instanceof ApiError && err.code === 401) {
+        setPendingAction({ type: 'generate_new', lesson: currentLesson });
+        handleOpenApiKeyModal(
+          err.message || 'API Key không hợp lệ. Vui lòng kiểm tra lại!',
+          null
+        );
+        return;
+      }
+
       alert(err.message || 'Không thể tạo câu hỏi mới. Vui lòng thử lại.');
     }
   }, [currentLesson, handleOpenApiKeyModal]);
