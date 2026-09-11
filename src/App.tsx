@@ -163,18 +163,7 @@ export default function App() {
 
   // Handler when user chooses a lesson from the Home Screen
   const handleStartLesson = useCallback(async (lesson: Lesson, overrideKey?: string) => {
-    const key = overrideKey || getStoredApiKey();
-
-    if (!key) {
-      setPendingAction({ type: 'lesson', lesson });
-      handleOpenApiKeyModal(
-        null,
-        'Vui lòng nhập Gemini API Key để bắt đầu tạo câu hỏi bài học nhé! 🔑'
-      );
-      setBearState('thinking');
-      setBearMessage('Bé hoặc phụ huynh hãy nhập Gemini API Key để bắt đầu nhé! 🐻');
-      return;
-    }
+    const key = overrideKey !== undefined ? overrideKey : getStoredApiKey();
 
     setAppState('loading');
     try {
@@ -198,18 +187,30 @@ export default function App() {
       );
       setAppState('playing');
     } catch (err: any) {
-      setAppState('home');
       if (err instanceof ApiError && err.code === 429) {
-        setPendingAction({ type: 'lesson', lesson });
-        handleOpenApiKeyModal(
-          'API Key hiện tại đã hết hạn mức (lỗi 429). Vui lòng nhập hoặc đổi sang API Key khác để tiếp tục!',
-          null
-        );
-        setBearState('sad');
-        setBearMessage('API Key đã hết hạn mức (lỗi 429). Bé hoặc phụ huynh hãy đổi sang key khác nhé! 🐻');
-        return;
+        // Fallback gracefully to smart curriculum so the child is NEVER blocked
+        try {
+          const fallbackData = await requestQuestions(lesson.title, 10, '', false);
+          setQuestions(fallbackData.questions);
+          setCurrentLesson(lesson);
+          setCurrentIdx(0);
+          setScore(0);
+          setSelectedOption(null);
+          setIsChecked(false);
+          setIsAnsweredCorrectly(false);
+          setUserAnswers({});
+          setShowHint(false);
+          setPendingAction(null);
+          setBearState('thinking');
+          setBearMessage('API Key tạm hết hạn mức (429). Gấu đã tự động bật Bộ đề thông minh chuẩn SGK cho bé nhé! 🐻✨');
+          setAppState('playing');
+          return;
+        } catch {
+          // If fallback fails
+        }
       }
 
+      setAppState('home');
       if (err instanceof ApiError && err.code === 401) {
         setPendingAction({ type: 'lesson', lesson });
         handleOpenApiKeyModal(
@@ -230,16 +231,7 @@ export default function App() {
       return;
     }
 
-    const key = overrideKey || getStoredApiKey();
-
-    if (!key) {
-      setPendingAction({ type: 'generate_new', lesson: currentLesson });
-      handleOpenApiKeyModal(
-        null,
-        'Vui lòng nhập Gemini API Key để tạo bộ câu hỏi mới nhé! 🔑'
-      );
-      return;
-    }
+    const key = overrideKey !== undefined ? overrideKey : getStoredApiKey();
 
     setAppState('loading');
     try {
@@ -262,18 +254,29 @@ export default function App() {
       );
       setAppState('playing');
     } catch (err: any) {
-      setAppState('end');
       if (err instanceof ApiError && err.code === 429) {
-        setPendingAction({ type: 'generate_new', lesson: currentLesson });
-        handleOpenApiKeyModal(
-          'API Key hiện tại đã hết hạn mức (lỗi 429). Vui lòng nhập hoặc đổi sang API Key khác để tiếp tục!',
-          null
-        );
-        setBearState('sad');
-        setBearMessage('API Key đã hết hạn mức (lỗi 429). Hãy đổi sang API Key khác để tiếp tục nhé! 🐻');
-        return;
+        // Fallback to fresh smart standard questions
+        try {
+          const fallbackData = await requestQuestions(currentLesson.title, 10, '', true);
+          setQuestions(fallbackData.questions);
+          setCurrentIdx(0);
+          setScore(0);
+          setSelectedOption(null);
+          setIsChecked(false);
+          setIsAnsweredCorrectly(false);
+          setUserAnswers({});
+          setShowHint(false);
+          setPendingAction(null);
+          setBearState('thinking');
+          setBearMessage('API Key tạm hết hạn mức (429). Gấu đã tạo 10 câu hỏi thông minh mới cho bé rồi nhé! 🐻✨');
+          setAppState('playing');
+          return;
+        } catch {
+          // If fallback fails
+        }
       }
 
+      setAppState('end');
       if (err instanceof ApiError && err.code === 401) {
         setPendingAction({ type: 'generate_new', lesson: currentLesson });
         handleOpenApiKeyModal(
@@ -287,14 +290,15 @@ export default function App() {
     }
   }, [currentLesson, handleOpenApiKeyModal]);
 
-  // Handler when user saves a new API key in the modal
+  // Handler when user saves or changes mode in the modal
   const handleSaveApiKey = useCallback((newKey: string) => {
-    setHasApiKey(true);
+    const isKeySaved = Boolean(newKey && newKey.trim());
+    setHasApiKey(isKeySaved);
     setIsApiKeyModalOpen(false);
     setApiKeyErrorMessage(null);
     setApiKeyInfoMessage(null);
 
-    // If an action was pending (e.g. stopped due to missing key or 429), resume it seamlessly!
+    // If an action was pending, resume it seamlessly!
     if (pendingAction) {
       const action = pendingAction;
       setPendingAction(null);
@@ -305,7 +309,11 @@ export default function App() {
       }
     } else {
       setBearState('celebrate');
-      setBearMessage('Đã lưu Gemini API Key thành công! Bé cùng bắt đầu ôn tập nhé! 🐻✨');
+      setBearMessage(
+        isKeySaved
+          ? 'Đã kích hoạt chế độ Gemini AI! Bé cùng bắt đầu ôn tập nhé! 🐻✨'
+          : 'Đã chuyển sang chế độ Đề chuẩn SGK (Miễn phí 100%)! Cùng học nào bé ơi! 🐻📚'
+      );
     }
   }, [pendingAction, handleStartLesson, handleGenerateNewQuestions]);
 
@@ -326,7 +334,11 @@ export default function App() {
         <span className="absolute top-2/3 right-6 text-3xl opacity-20 select-none">📐</span>
       </div>
 
-      <main className="relative z-10 w-full max-w-3xl mx-auto px-4 py-4 md:py-8 flex-1 flex flex-col">
+      <main
+        className={`relative z-10 w-full ${
+          appState === 'home' ? 'max-w-7xl' : 'max-w-3xl'
+        } mx-auto px-4 py-4 md:py-8 flex-1 flex flex-col transition-all duration-300`}
+      >
         <Header
           soundEnabled={soundEnabled}
           onToggleSound={handleToggleSound}
@@ -336,7 +348,7 @@ export default function App() {
         />
 
         {appState === 'home' && (
-          <div className="my-auto">
+          <div className="w-full my-2 md:my-4">
             <HomeScreen onSelectLesson={handleStartLesson} />
           </div>
         )}

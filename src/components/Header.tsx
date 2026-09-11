@@ -1,5 +1,5 @@
 import React from 'react';
-import { Volume2, VolumeX, BookOpen, KeyRound } from 'lucide-react';
+import { Volume2, VolumeX, BookOpen, Sparkles } from 'lucide-react';
 import { sound } from '../utils/audio';
 
 interface HeaderProps {
@@ -18,9 +18,9 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenApiKeyModal,
 }) => {
   return (
-    <header className="flex items-center justify-between gap-3 mb-6 bg-white/80 backdrop-blur-md px-4 md:px-6 py-3.5 rounded-3xl shadow-md border-2 border-sky-100">
+    <header className="flex items-center justify-between gap-3 mb-6 bg-white/85 backdrop-blur-md px-4 md:px-6 py-3.5 rounded-3xl shadow-md border-2 border-sky-100">
       <div className="flex items-center gap-3">
-        <div className="w-11 h-11 md:w-12 md:h-12 bg-gradient-to-tr from-sky-400 to-blue-500 rounded-2xl flex items-center justify-center text-2xl shadow-md shadow-sky-200">
+        <div className="w-11 h-11 md:w-12 md:h-12 bg-gradient-to-tr from-sky-400 to-blue-500 rounded-2xl flex items-center justify-center text-2xl shadow-md shadow-sky-200 select-none">
           ⭐
         </div>
         <div>
@@ -34,29 +34,37 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-2">
-        {/* Gemini API Key Button */}
+        {/* Mode Indicator & Optional API Key Button (Hybrid Mode) */}
         <button
           type="button"
           onClick={() => {
             sound.playSelect();
             onOpenApiKeyModal();
           }}
-          title={hasApiKey ? 'Cài đặt Gemini API Key (Đã lưu)' : 'Chưa nhập Gemini API Key'}
-          className={`flex items-center gap-1.5 px-3 py-2.5 rounded-2xl font-extrabold text-xs md:text-sm border-2 transition-all cursor-pointer shadow-sm ${
+          title={
             hasApiKey
-              ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300'
-              : 'bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-300 animate-pulse'
+              ? 'Đang dùng chế độ Gemini AI. Bấm để quản lý key.'
+              : 'Đang dùng chế độ Đề chuẩn SGK (Miễn phí 100%). Bấm nếu muốn thử nghiệm Gemini AI.'
+          }
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-2xl font-extrabold text-xs md:text-sm border-2 transition-all cursor-pointer shadow-sm ${
+            hasApiKey
+              ? 'bg-sky-50 hover:bg-sky-100 text-sky-800 border-sky-300'
+              : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
           }`}
         >
-          <KeyRound className="w-4 h-4 text-emerald-600" />
-          <span className="hidden sm:inline">
-            {hasApiKey ? 'API Key' : 'Nhập API Key'}
-          </span>
-          <span
-            className={`w-2 h-2 rounded-full ${
-              hasApiKey ? 'bg-emerald-500 ring-2 ring-emerald-200' : 'bg-amber-500 ring-2 ring-amber-200'
-            }`}
-          />
+          {hasApiKey ? (
+            <>
+              <Sparkles className="w-4 h-4 text-amber-500" />
+              <span className="hidden sm:inline">Chế độ: AI</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-emerald-200" />
+            </>
+          ) : (
+            <>
+              <BookOpen className="w-4 h-4 text-emerald-600" />
+              <span className="hidden sm:inline">Đề chuẩn SGK</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-emerald-200" />
+            </>
+          )}
         </button>
 
         {/* Sound Toggle */}

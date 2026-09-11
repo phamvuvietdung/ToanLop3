@@ -128,9 +128,11 @@ async function startServer() {
 
     const effectiveKey = (apiKey && typeof apiKey === "string" ? apiKey.trim() : "") || process.env.GEMINI_API_KEY || "";
     if (!effectiveKey) {
-      return res.status(400).json({
-        error: "Vui lòng nhập Gemini API Key để bắt đầu tạo câu hỏi!",
-        code: "MISSING_KEY",
+      const fallback = getFallbackQuestionsForTopic(topic, count);
+      return res.json({
+        questions: fallback,
+        notice: "Đang học với Bộ đề thông minh chuẩn SGK Toán 3 (Miễn phí & không cần API Key).",
+        source: "smart_standard",
       });
     }
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { KeyRound, X, Check, Eye, EyeOff, AlertTriangle, Info, Clipboard, ExternalLink, Trash2 } from 'lucide-react';
+import { KeyRound, X, Check, Eye, EyeOff, AlertTriangle, Info, Clipboard, ExternalLink, Trash2, Sparkles, BookOpen } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getStoredApiKey, setStoredApiKey, removeStoredApiKey, maskApiKey } from '../utils/apiKeyStorage';
 import { sound } from '../utils/audio';
@@ -27,7 +27,6 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
 
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Sync stored key into state and autofocus when modal opens
   useEffect(() => {
     if (isOpen) {
       const currentStored = getStoredApiKey();
@@ -36,7 +35,6 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
       setPasteSuccess(false);
       setValidationError(null);
 
-      // Focus and select input text so user can immediately paste/type over old key
       const focusTimer = setTimeout(() => {
         if (inputRef.current) {
           inputRef.current.focus();
@@ -53,7 +51,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
   const handleSave = () => {
     const trimmed = keyValue.trim();
     if (!trimmed) {
-      setValidationError('Vui lòng nhập hoặc dán Gemini API Key trước khi lưu!');
+      setValidationError('Vui lòng dán Gemini API Key hoặc chọn "Dùng chế độ Chuẩn SGK"');
       if (inputRef.current) inputRef.current.focus();
       return;
     }
@@ -81,13 +79,11 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
     }
   };
 
-  const handleRemoveKey = () => {
+  const handleUseStandardMode = () => {
     removeStoredApiKey();
     setKeyValue('');
-    setValidationError('Đã xóa API Key khỏi bộ nhớ trình duyệt.');
-    if (inputRef.current) {
-      inputRef.current.focus();
-    }
+    sound.playSelect();
+    onSave(''); // Clear key and switch to standard SGK mode immediately
   };
 
   const handlePasteClipboard = async () => {
@@ -100,7 +96,6 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
         setTimeout(() => setPasteSuccess(false), 2000);
       }
     } catch {
-      // If clipboard permission is blocked, focus input so user can press Ctrl+V / long press
       if (inputRef.current) {
         inputRef.current.focus();
       }
@@ -126,14 +121,14 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
           <div className="px-6 py-4 bg-gradient-to-r from-sky-500 to-blue-600 text-white flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-xl shadow-inner">
-                <KeyRound className="w-5 h-5 text-amber-200" />
+                <Sparkles className="w-5 h-5 text-amber-200" />
               </div>
               <div>
                 <h3 id="api-key-modal-title" className="font-black text-lg md:text-xl text-white tracking-tight">
-                  Cài đặt Gemini API Key 🔑
+                  Tùy chọn tạo đề học tập 🎓
                 </h3>
                 <p className="text-xs text-sky-100 font-medium">
-                  Lưu trên thiết bị • Không giới hạn tạo câu đố
+                  Chế độ kết hợp (Hybrid Mode) • Linh hoạt & Miễn phí
                 </p>
               </div>
             </div>
@@ -148,25 +143,38 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
           </div>
 
           <div className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
-            {/* Friendly 429 Quota Exceeded Alert */}
+            {/* Friendly Hybrid Mode Badge Banner */}
+            <div className="p-3.5 rounded-2xl bg-emerald-50 border-2 border-emerald-200 text-emerald-900 text-xs sm:text-sm font-medium leading-relaxed flex items-start gap-3">
+              <BookOpen className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-black text-emerald-950 mb-0.5">
+                  Mặc định: 100% Miễn phí & Không cần API Key
+                </p>
+                <p className="text-emerald-800">
+                  Ứng dụng đã tích hợp sẵn <strong>Bộ sinh đề toán thông minh chuẩn SGK Kết nối tri thức</strong>. Các con số và câu hỏi luôn được đổi mới ngẫu nhiên mỗi lần chơi!
+                </p>
+              </div>
+            </div>
+
+            {/* Quota Notice if any */}
             {errorMessage && (
               <motion.div
                 initial={{ opacity: 0, y: -8 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="p-4 rounded-2xl bg-rose-50 border-2 border-rose-300 text-rose-800 text-sm font-bold flex items-start gap-3 shadow-sm"
+                className="p-3.5 rounded-2xl bg-amber-50 border-2 border-amber-300 text-amber-900 text-xs sm:text-sm font-medium flex items-start gap-3 shadow-sm"
               >
-                <AlertTriangle className="w-5 h-5 text-rose-600 flex-shrink-0 mt-0.5" />
+                <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
-                  <p className="font-black text-rose-900 mb-0.5">Thông báo hạn mức</p>
+                  <p className="font-black text-amber-950 mb-0.5">Thông báo hạn mức AI</p>
                   <p className="leading-relaxed">{errorMessage}</p>
                 </div>
               </motion.div>
             )}
 
-            {/* General Info / Prompt to Enter Key */}
+            {/* General Info */}
             {!errorMessage && infoMessage && (
-              <div className="p-3.5 rounded-2xl bg-amber-50 border-2 border-amber-200 text-amber-800 text-sm font-semibold flex items-start gap-2.5">
-                <Info className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div className="p-3.5 rounded-2xl bg-sky-50 border-2 border-sky-200 text-sky-900 text-xs sm:text-sm font-medium flex items-start gap-2.5">
+                <Info className="w-5 h-5 text-sky-600 flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <p className="leading-relaxed">{infoMessage}</p>
                 </div>
@@ -175,27 +183,28 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
 
             {/* Saved Key Status Indicator */}
             {currentSavedKey && (
-              <div className="flex items-center justify-between px-3.5 py-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-bold text-emerald-800">
+              <div className="flex items-center justify-between px-3.5 py-2.5 bg-sky-50 border border-sky-200 rounded-xl text-xs font-bold text-sky-800">
                 <span className="flex items-center gap-1.5">
-                  <Check className="w-4 h-4 text-emerald-600" />
-                  Đang ghi nhớ: <code className="bg-emerald-100/70 px-1.5 py-0.5 rounded font-mono text-emerald-900">{maskApiKey(currentSavedKey)}</code>
+                  <Sparkles className="w-4 h-4 text-amber-500" />
+                  Đang dùng AI Key: <code className="bg-sky-100 px-1.5 py-0.5 rounded font-mono text-sky-900">{maskApiKey(currentSavedKey)}</code>
                 </span>
                 <button
                   type="button"
-                  onClick={handleRemoveKey}
-                  title="Xóa khóa đã lưu này"
+                  onClick={handleUseStandardMode}
+                  title="Xóa key và quay về Chế độ Đề chuẩn SGK"
                   className="text-rose-600 hover:text-rose-800 hover:underline flex items-center gap-1 text-xs cursor-pointer ml-2"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  <span>Xóa</span>
+                  <span>Xóa Key</span>
                 </button>
               </div>
             )}
 
-            {/* Input Form */}
-            <div>
-              <label htmlFor="gemini-api-key-input" className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1.5">
-                Nhập hoặc dán API Key của bạn:
+            {/* Input Form for Optional AI Key */}
+            <div className="pt-1">
+              <label htmlFor="gemini-api-key-input" className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1.5 flex items-center justify-between">
+                <span>Gemini API Key (Tùy chọn mở rộng AI):</span>
+                <span className="text-slate-400 font-semibold lowercase">không bắt buộc</span>
               </label>
 
               <div className="relative flex items-center">
@@ -214,13 +223,12 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
                       handleSave();
                     }
                   }}
-                  placeholder="AIzaSy..."
+                  placeholder="Dán AIzaSy... vào đây (hoặc để trống)"
                   autoComplete="off"
                   spellCheck="false"
                   className="w-full pr-24 pl-4 py-3 bg-slate-50 border-2 border-slate-300 focus:border-sky-500 focus:bg-white rounded-2xl text-sm font-mono text-slate-800 outline-none transition-all shadow-inner"
                 />
 
-                {/* Inner input controls (Clear, Paste, Show/Hide) */}
                 <div className="absolute right-2 flex items-center gap-1">
                   {keyValue && (
                     <button
@@ -268,25 +276,25 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
 
             {/* Quick helper info */}
             <div className="bg-sky-50/70 border border-sky-200/80 rounded-2xl p-3.5 text-xs text-slate-600 space-y-1.5">
-              <p className="font-bold text-sky-900 flex items-center gap-1">
-                <span>📌 Hướng dẫn & Lưu ý:</span>
+              <p className="font-bold text-sky-900">
+                💡 Bạn có thể chọn cách học nào?
               </p>
               <ul className="list-disc list-inside space-y-1 text-slate-600 leading-relaxed">
                 <li>
-                  Khóa API được lưu trên <strong>bộ nhớ trình duyệt (localStorage)</strong> của máy tính, điện thoại hoặc máy tính bảng của bạn.
+                  <strong>Không cần Key:</strong> Nhấn "Dùng Đề chuẩn SGK" bên dưới để vào học ngay lập tức, nhanh tức thì và không lo bất kỳ giới hạn nào.
                 </li>
                 <li>
-                  Hệ thống dùng chính API Key này để tạo các đề Toán 3 ngẫu nhiên, hấp dẫn bám sát sách Kết nối tri thức.
+                  <strong>Dùng Gemini AI:</strong> Dán key để thử nghiệm tính năng AI sáng tạo câu hỏi độc đáo.
                 </li>
               </ul>
-              <div className="pt-1 flex items-center justify-between">
+              <div className="pt-1">
                 <a
                   href="https://aistudio.google.com/apikey"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-sky-600 hover:text-sky-800 font-bold hover:underline"
+                  className="inline-flex items-center gap-1 text-sky-600 hover:text-sky-800 font-bold hover:underline text-xs"
                 >
-                  <span>Nhận Gemini API Key miễn phí tại Google AI Studio</span>
+                  <span>Lấy Gemini API Key miễn phí tại Google AI Studio</span>
                   <ExternalLink className="w-3.5 h-3.5" />
                 </a>
               </div>
@@ -294,32 +302,43 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
           </div>
 
           {/* Footer Action Buttons */}
-          <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+          <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
             <button
               type="button"
-              onClick={onClose}
-              className="px-4 py-2.5 rounded-2xl font-bold text-slate-600 hover:bg-slate-200 text-sm transition-all cursor-pointer"
+              onClick={handleUseStandardMode}
+              className="px-4 py-2.5 rounded-2xl font-bold text-emerald-700 bg-emerald-100/70 hover:bg-emerald-200/80 text-xs sm:text-sm transition-all cursor-pointer flex items-center gap-1.5"
             >
-              Để sau
+              <BookOpen className="w-4 h-4" />
+              <span>Dùng Đề chuẩn SGK</span>
             </button>
 
-            <button
-              type="button"
-              onClick={handleSave}
-              className="flex items-center gap-2 px-6 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-black text-sm shadow-md shadow-emerald-200 hover:shadow-lg transition-all cursor-pointer"
-            >
-              {saveSuccess ? (
-                <>
-                  <Check className="w-4 h-4" />
-                  <span>Đã lưu!</span>
-                </>
-              ) : (
-                <>
-                  <KeyRound className="w-4 h-4" />
-                  <span>Lưu API Key</span>
-                </>
-              )}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3.5 py-2.5 rounded-2xl font-bold text-slate-600 hover:bg-slate-200 text-xs sm:text-sm transition-all cursor-pointer"
+              >
+                Đóng
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSave}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white font-black text-xs sm:text-sm shadow-md shadow-sky-200 hover:shadow-lg transition-all cursor-pointer"
+              >
+                {saveSuccess ? (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>Đã kích hoạt AI!</span>
+                  </>
+                ) : (
+                  <>
+                    <KeyRound className="w-4 h-4" />
+                    <span>Lưu Key AI</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </motion.div>
       </div>
