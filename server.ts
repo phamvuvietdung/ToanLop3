@@ -208,7 +208,7 @@ async function startServer() {
     try {
       const ai = new GoogleGenAI({ apiKey: key });
       await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-3.8-flash",
         contents: "1+1=",
       });
       return res.json({ valid: true, message: "Khóa API Gemini hợp lệ 100%!" });

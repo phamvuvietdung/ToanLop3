@@ -57,7 +57,7 @@ export async function testGeminiApiKey(apiKey: string): Promise<KeyValidationRes
     const ai = new GoogleGenAI({ apiKey: trimmed });
     // Issue a minimal ping prompt (1 token output) to verify key validity and quota
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.8-flash',
       contents: '1+1=',
     });
 
@@ -101,14 +101,14 @@ export async function testGeminiApiKey(apiKey: string): Promise<KeyValidationRes
       return {
         valid: false,
         status: 'invalid',
-        message: 'Khóa API không hợp lệ. Vui lòng đảm bảo bạn copy đầy đủ từ AI Studio (bắt đầu bằng AIzaSy...).',
+        message: 'Khóa API không hợp lệ. Vui lòng kiểm tra và đảm bảo copy đầy đủ từ Google AI Studio (bắt đầu bằng AIzaSy...).',
       };
     }
 
     return {
       valid: false,
       status: 'network_error',
-      message: `Không thể kết nối đến máy chủ Google (${err?.message || 'Lỗi mạng'}). Vui lòng kiểm tra lại kết nối internet.`,
+      message: `Lỗi kết nối hoặc phản hồi từ Google: ${err?.message || 'Vui lòng kiểm tra lại kết nối mạng'}.`,
     };
   }
 }
