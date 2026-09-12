@@ -1,4 +1,4 @@
-export type BearState = 'normal' | 'thinking' | 'celebrate' | 'happy';
+export type BearState = 'normal' | 'thinking' | 'celebrate' | 'happy' | 'sad';
 
 export interface Question {
   id: number;
@@ -34,4 +34,16 @@ export interface Chapter {
   id: string;
   title: string;
   lessons: Lesson[];
+}
+
+export interface StudyRecord {
+  id: string;
+  lessonId: string;
+  lessonTitle: string;
+  score: number;
+  totalScore: number;
+  correctCount: number;
+  totalQuestions: number;
+  timestamp: number;
+  source: 'ai' | 'smart_standard';
 }

@@ -198,6 +198,29 @@ async function startServer() {
     }
   });
 
+  app.post("/api/test-api-key", async (req, res) => {
+    const { apiKey } = req.body;
+    const key = (apiKey && typeof apiKey === "string" ? apiKey.trim() : "") || process.env.GEMINI_API_KEY || "";
+    if (!key) {
+      return res.status(400).json({ valid: false, message: "Vui lòng nhập API key" });
+    }
+
+    try {
+      const ai = new GoogleGenAI({ apiKey: key });
+      await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: "1+1=",
+      });
+      return res.json({ valid: true, message: "Khóa API Gemini hợp lệ 100%!" });
+    } catch (err: any) {
+      const raw = `${err?.message || ""} ${JSON.stringify(err || {})}`.toLowerCase();
+      if (raw.includes("429") || raw.includes("quota") || raw.includes("resource_exhausted")) {
+        return res.status(429).json({ valid: false, message: "Khóa đúng nhưng hiện hết hạn mức (429)" });
+      }
+      return res.status(400).json({ valid: false, message: "Khóa API không hợp lệ hoặc chưa được kích hoạt" });
+    }
+  });
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },

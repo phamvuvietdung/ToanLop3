@@ -1,5 +1,5 @@
 import React from 'react';
-import { Volume2, VolumeX, BookOpen, Sparkles } from 'lucide-react';
+import { Volume2, VolumeX, BookOpen, Sparkles, History } from 'lucide-react';
 import { sound } from '../utils/audio';
 
 interface HeaderProps {
@@ -8,6 +8,7 @@ interface HeaderProps {
   onReset: () => void;
   hasApiKey: boolean;
   onOpenApiKeyModal: () => void;
+  onOpenHistoryModal: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -16,6 +17,7 @@ export const Header: React.FC<HeaderProps> = ({
   onReset,
   hasApiKey,
   onOpenApiKeyModal,
+  onOpenHistoryModal,
 }) => {
   return (
     <header className="flex items-center justify-between gap-3 mb-6 bg-white/85 backdrop-blur-md px-4 md:px-6 py-3.5 rounded-3xl shadow-md border-2 border-sky-100">
@@ -34,6 +36,20 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-2">
+        {/* Study History & Scoreboard Button */}
+        <button
+          type="button"
+          onClick={() => {
+            sound.playSelect();
+            onOpenHistoryModal();
+          }}
+          title="Xem Lịch sử học tập & Điểm số của bé"
+          className="flex items-center gap-1.5 px-3 py-2 rounded-2xl font-extrabold text-xs md:text-sm border-2 transition-all cursor-pointer shadow-sm bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-300"
+        >
+          <History className="w-4 h-4 text-amber-600" />
+          <span className="hidden sm:inline">Lịch sử điểm</span>
+        </button>
+
         {/* Mode Indicator & Optional API Key Button (Hybrid Mode) */}
         <button
           type="button"
@@ -43,7 +59,7 @@ export const Header: React.FC<HeaderProps> = ({
           }}
           title={
             hasApiKey
-              ? 'Đang dùng chế độ Gemini AI. Bấm để quản lý key.'
+              ? 'Đang dùng chế độ Gemini AI. Bấm để kiểm tra/quản lý key.'
               : 'Đang dùng chế độ Đề chuẩn SGK (Miễn phí 100%). Bấm nếu muốn thử nghiệm Gemini AI.'
           }
           className={`flex items-center gap-1.5 px-3 py-2 rounded-2xl font-extrabold text-xs md:text-sm border-2 transition-all cursor-pointer shadow-sm ${
@@ -93,7 +109,7 @@ export const Header: React.FC<HeaderProps> = ({
             onReset();
           }}
           title="Về Mục Lục Bài Học"
-          className="flex items-center gap-1.5 px-3 py-2.5 rounded-2xl bg-amber-50 hover:bg-amber-100 text-amber-700 font-extrabold text-xs md:text-sm border-2 border-amber-200 transition-all cursor-pointer"
+          className="flex items-center gap-1.5 px-3 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs md:text-sm border-2 border-slate-200 transition-all cursor-pointer"
         >
           <BookOpen className="w-4 h-4" />
           <span className="hidden sm:inline">Mục lục</span>

@@ -1,7 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { KeyRound, X, Check, Eye, EyeOff, AlertTriangle, Info, Clipboard, ExternalLink, Trash2, Sparkles, BookOpen } from 'lucide-react';
+import {
+  KeyRound,
+  X,
+  Check,
+  Eye,
+  EyeOff,
+  AlertTriangle,
+  Info,
+  Clipboard,
+  ExternalLink,
+  Trash2,
+  Sparkles,
+  BookOpen,
+  Loader2,
+  CheckCircle2,
+  XCircle,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getStoredApiKey, setStoredApiKey, removeStoredApiKey, maskApiKey } from '../utils/apiKeyStorage';
+import { testGeminiApiKey, KeyValidationResult } from '../utils/apiKeyValidator';
 import { sound } from '../utils/audio';
 
 interface ApiKeyModalProps {
@@ -25,6 +42,10 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
   const [pasteSuccess, setPasteSuccess] = useState<boolean>(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
+  // Testing Key State
+  const [isTesting, setIsTesting] = useState<boolean>(false);
+  const [testResult, setTestResult] = useState<KeyValidationResult | null>(null);
+
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -34,6 +55,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
       setSaveSuccess(false);
       setPasteSuccess(false);
       setValidationError(null);
+      setTestResult(null);
 
       const focusTimer = setTimeout(() => {
         if (inputRef.current) {
@@ -48,10 +70,42 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
 
   if (!isOpen) return null;
 
+  const handleTestKey = async () => {
+    const trimmed = keyValue.trim();
+    if (!trimmed) {
+      setValidationError('Vui lòng dán khóa API vào ô trước khi bấm kiểm tra.');
+      if (inputRef.current) inputRef.current.focus();
+      return;
+    }
+
+    setValidationError(null);
+    setTestResult(null);
+    setIsTesting(true);
+
+    try {
+      const result = await testGeminiApiKey(trimmed);
+      setTestResult(result);
+      if (result.valid) {
+        sound.playCorrect();
+      } else {
+        sound.playIncorrect();
+      }
+    } catch {
+      setTestResult({
+        valid: false,
+        status: 'network_error',
+        message: 'Đã xảy ra lỗi khi kiểm tra. Vui lòng kiểm tra lại kết nối mạng.',
+      });
+      sound.playIncorrect();
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
   const handleSave = () => {
     const trimmed = keyValue.trim();
     if (!trimmed) {
-      setValidationError('Vui lòng dán Gemini API Key hoặc chọn "Dùng chế độ Chuẩn SGK"');
+      setValidationError('Vui lòng dán Gemini API Key hoặc chọn "Dùng đề chuẩn SGK"');
       if (inputRef.current) inputRef.current.focus();
       return;
     }
@@ -74,6 +128,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
   const handleClear = () => {
     setKeyValue('');
     setValidationError(null);
+    setTestResult(null);
     if (inputRef.current) {
       inputRef.current.focus();
     }
@@ -82,6 +137,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
   const handleUseStandardMode = () => {
     removeStoredApiKey();
     setKeyValue('');
+    setTestResult(null);
     sound.playSelect();
     onSave(''); // Clear key and switch to standard SGK mode immediately
   };
@@ -93,6 +149,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
         setKeyValue(text.trim());
         setPasteSuccess(true);
         setValidationError(null);
+        setTestResult(null);
         setTimeout(() => setPasteSuccess(false), 2000);
       }
     } catch {
@@ -125,10 +182,10 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
               </div>
               <div>
                 <h3 id="api-key-modal-title" className="font-black text-lg md:text-xl text-white tracking-tight">
-                  Tùy chọn tạo đề học tập 🎓
+                  Quản lý Khóa Gemini AI 🎓
                 </h3>
                 <p className="text-xs text-sky-100 font-medium">
-                  Chế độ kết hợp (Hybrid Mode) • Linh hoạt & Miễn phí
+                  Kiểm tra tính hợp lệ & Trạng thái hoạt động
                 </p>
               </div>
             </div>
@@ -165,7 +222,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
               >
                 <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
-                  <p className="font-black text-amber-950 mb-0.5">Thông báo hạn mức AI</p>
+                  <p className="font-black text-amber-950 mb-0.5">Thông báo từ hệ thống AI</p>
                   <p className="leading-relaxed">{errorMessage}</p>
                 </div>
               </motion.div>
@@ -216,6 +273,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
                   onChange={(e) => {
                     setKeyValue(e.target.value);
                     setValidationError(null);
+                    setTestResult(null);
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
@@ -223,7 +281,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
                       handleSave();
                     }
                   }}
-                  placeholder="Dán AIzaSy... vào đây (hoặc để trống)"
+                  placeholder="Dán AIzaSy... vào đây"
                   autoComplete="off"
                   spellCheck="false"
                   className="w-full pr-24 pl-4 py-3 bg-slate-50 border-2 border-slate-300 focus:border-sky-500 focus:bg-white rounded-2xl text-sm font-mono text-slate-800 outline-none transition-all shadow-inner"
@@ -272,19 +330,80 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
                   {validationError}
                 </p>
               )}
+
+              {/* Test Key Button & Real-Time Status Result */}
+              <div className="mt-2.5">
+                <button
+                  type="button"
+                  onClick={handleTestKey}
+                  disabled={isTesting || !keyValue.trim()}
+                  className={`w-full py-2.5 px-4 rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 border-2 transition-all cursor-pointer ${
+                    !keyValue.trim()
+                      ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                      : isTesting
+                      ? 'bg-sky-50 border-sky-300 text-sky-700'
+                      : 'bg-white hover:bg-sky-50 border-sky-300 hover:border-sky-400 text-sky-700 shadow-xs'
+                  }`}
+                >
+                  {isTesting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-sky-600" />
+                      <span>Đang kết nối thử nghiệm đến Google Gemini...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 text-sky-600" />
+                      <span>Kiểm tra xem API Key có hoạt động không</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Validation Test Result Box */}
+                {testResult && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`mt-2 p-3 rounded-xl border text-xs font-semibold flex items-start gap-2 ${
+                      testResult.valid
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                        : testResult.status === 'quota_exceeded'
+                        ? 'bg-amber-50 border-amber-300 text-amber-900'
+                        : 'bg-rose-50 border-rose-300 text-rose-900'
+                    }`}
+                  >
+                    {testResult.valid ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+                    ) : testResult.status === 'quota_exceeded' ? (
+                      <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                    ) : (
+                      <XCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+                    )}
+                    <div className="flex-1 leading-relaxed">
+                      <p className="font-bold">
+                        {testResult.valid
+                          ? '✅ Khóa API chính xác & hoạt động tốt!'
+                          : testResult.status === 'quota_exceeded'
+                          ? '⚠️ Khóa đúng nhưng đang tạm hết hạn mức (429)'
+                          : '❌ Khóa API không đúng hoặc không có quyền truy cập'}
+                      </p>
+                      <p className="mt-0.5 opacity-90">{testResult.message}</p>
+                    </div>
+                  </motion.div>
+                )}
+              </div>
             </div>
 
             {/* Quick helper info */}
             <div className="bg-sky-50/70 border border-sky-200/80 rounded-2xl p-3.5 text-xs text-slate-600 space-y-1.5">
               <p className="font-bold text-sky-900">
-                💡 Bạn có thể chọn cách học nào?
+                💡 Lưu ý hữu ích:
               </p>
               <ul className="list-disc list-inside space-y-1 text-slate-600 leading-relaxed">
                 <li>
-                  <strong>Không cần Key:</strong> Nhấn "Dùng Đề chuẩn SGK" bên dưới để vào học ngay lập tức, nhanh tức thì và không lo bất kỳ giới hạn nào.
+                  <strong>Không cần Key:</strong> Bấm "Dùng Đề chuẩn SGK" bên dưới để vào học ngay lập tức, nhanh tức thì và không lo bất kỳ giới hạn nào.
                 </li>
                 <li>
-                  <strong>Dùng Gemini AI:</strong> Dán key để thử nghiệm tính năng AI sáng tạo câu hỏi độc đáo.
+                  <strong>Dùng Gemini AI:</strong> Dán key và bấm <em>"Kiểm tra xem API Key có hoạt động không"</em> trước khi Lưu để chắc chắn key đúng.
                 </li>
               </ul>
               <div className="pt-1">
@@ -329,7 +448,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
                 {saveSuccess ? (
                   <>
                     <Check className="w-4 h-4" />
-                    <span>Đã kích hoạt AI!</span>
+                    <span>Đã lưu!</span>
                   </>
                 ) : (
                   <>

@@ -1,12 +1,26 @@
-import React, { useState, useMemo } from 'react';
-import { BookOpen, Search, Sparkles, ChevronRight, CheckCircle2, Filter, X, ArrowRight, Layers } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import {
+  BookOpen,
+  Search,
+  Sparkles,
+  ChevronRight,
+  CheckCircle2,
+  Filter,
+  X,
+  ArrowRight,
+  Layers,
+  Award,
+  History,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Lesson } from '../types';
 import { TOC } from '../data/toc';
 import { sound } from '../utils/audio';
+import { getLessonProgressMap } from '../utils/historyStorage';
 
 interface HomeScreenProps {
   onSelectLesson: (lesson: Lesson) => void;
+  onOpenHistory?: () => void;
 }
 
 // Visual themes for all 7 topics
@@ -104,9 +118,14 @@ const CHAPTER_THEMES = [
   },
 ];
 
-export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectLesson }) => {
+export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectLesson, onOpenHistory }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTopicFilter, setActiveTopicFilter] = useState<string>('all');
+  const [progressMap, setProgressMap] = useState<Record<string, { bestScore: number; bestPercentage: number; attemptsCount: number }>>({});
+
+  useEffect(() => {
+    setProgressMap(getLessonProgressMap());
+  }, []);
 
   const handleLessonPick = (lesson: Lesson) => {
     sound.playSelect();
@@ -141,6 +160,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectLesson }) => {
   }, [searchQuery, activeTopicFilter]);
 
   const totalLessonsCount = TOC.reduce((acc, ch) => acc + ch.lessons.length, 0);
+  const completedLessonsCount = Object.keys(progressMap).length;
 
   return (
     <motion.div
@@ -169,20 +189,36 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectLesson }) => {
             </p>
           </div>
 
-          {/* Highlights */}
+          {/* Highlights & Quick History Link */}
           <div className="flex items-center gap-2 md:gap-3 flex-wrap md:flex-nowrap">
-            <div className="bg-sky-50 border border-sky-200 px-3.5 py-2.5 rounded-2xl text-center flex-1 min-w-[100px]">
+            <div className="bg-sky-50 border border-sky-200 px-3.5 py-2.5 rounded-2xl text-center flex-1 min-w-[95px]">
               <div className="text-xl md:text-2xl font-black text-sky-600">7</div>
               <div className="text-[11px] font-bold text-sky-900 uppercase">Chủ đề</div>
             </div>
-            <div className="bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 rounded-2xl text-center flex-1 min-w-[100px]">
-              <div className="text-xl md:text-2xl font-black text-emerald-600">{totalLessonsCount}</div>
-              <div className="text-[11px] font-bold text-emerald-900 uppercase">Bài học</div>
+            <div className="bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 rounded-2xl text-center flex-1 min-w-[95px]">
+              <div className="text-xl md:text-2xl font-black text-emerald-600">
+                {completedLessonsCount}/{totalLessonsCount}
+              </div>
+              <div className="text-[11px] font-bold text-emerald-900 uppercase">Đã làm</div>
             </div>
-            <div className="bg-amber-50 border border-amber-200 px-3.5 py-2.5 rounded-2xl text-center flex-1 min-w-[110px]">
-              <div className="text-xl md:text-2xl font-black text-amber-600">100%</div>
-              <div className="text-[11px] font-bold text-amber-900 uppercase">Miễn phí</div>
-            </div>
+
+            {onOpenHistory && (
+              <button
+                type="button"
+                onClick={() => {
+                  sound.playSelect();
+                  onOpenHistory();
+                }}
+                className="bg-amber-50 hover:bg-amber-100 border-2 border-amber-300 px-3.5 py-2.5 rounded-2xl text-center flex-1 min-w-[110px] transition-all cursor-pointer shadow-xs hover:shadow-md"
+              >
+                <div className="text-xl md:text-2xl font-black text-amber-600 flex items-center justify-center gap-1">
+                  <History className="w-5 h-5 text-amber-500" />
+                </div>
+                <div className="text-[11px] font-black text-amber-900 uppercase">
+                  Bảng điểm
+                </div>
+              </button>
+            )}
           </div>
         </div>
 
@@ -313,6 +349,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectLesson }) => {
                     const lessonNum = match ? match[1] : '';
                     const cleanTitle = match ? match[2] : lesson.title;
 
+                    const pastResult = progressMap[lesson.id];
+
                     return (
                       <button
                         key={lesson.id}
@@ -329,11 +367,30 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectLesson }) => {
                           </span>
                         </div>
 
-                        <div className="flex items-center gap-1 text-slate-400 group-hover:text-sky-600 transition-colors flex-shrink-0">
-                          <span className="text-[11px] font-black opacity-0 group-hover:opacity-100 transition-opacity hidden sm:inline">
-                            Vào học
-                          </span>
-                          <ArrowRight className="w-4 h-4 transform group-hover:translate-x-0.5 transition-transform" />
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {/* If previously completed, display score pill */}
+                          {pastResult ? (
+                            <span
+                              className={`px-2 py-0.5 rounded-lg text-[10px] font-black flex items-center gap-1 ${
+                                pastResult.bestPercentage >= 80
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                  : pastResult.bestPercentage >= 50
+                                  ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                  : 'bg-rose-100 text-rose-800 border border-rose-200'
+                              }`}
+                              title={`Điểm cao nhất: ${pastResult.bestScore}đ (${pastResult.bestPercentage}%)`}
+                            >
+                              <span>⭐</span>
+                              <span>{pastResult.bestScore}đ</span>
+                            </span>
+                          ) : null}
+
+                          <div className="flex items-center gap-1 text-slate-400 group-hover:text-sky-600 transition-colors">
+                            <span className="text-[11px] font-black opacity-0 group-hover:opacity-100 transition-opacity hidden sm:inline">
+                              {pastResult ? 'Làm lại' : 'Vào học'}
+                            </span>
+                            <ArrowRight className="w-4 h-4 transform group-hover:translate-x-0.5 transition-transform" />
+                          </div>
                         </div>
                       </button>
                     );
