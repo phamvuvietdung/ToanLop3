@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import confetti from 'canvas-confetti';
 import { MATH_QUESTIONS } from './data/questions';
 import { BearState, Question, UserAnswer, Lesson } from './types';
@@ -13,7 +13,7 @@ import { ApiKeyModal } from './components/ApiKeyModal';
 import { HistoryModal } from './components/HistoryModal';
 import { getStoredApiKey, hasStoredApiKey } from './utils/apiKeyStorage';
 import { requestQuestions, ApiError } from './utils/questionService';
-import { saveStudyRecord } from './utils/historyStorage';
+import { saveStudyRecord, syncHistoryWithServer } from './utils/historyStorage';
 import { sound } from './utils/audio';
 
 export default function App() {
@@ -25,14 +25,17 @@ export default function App() {
   const [currentIdx, setCurrentIdx] = useState<number>(0);
   const [score, setScore] = useState<number>(0);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
-  const [isChecked, setIsChecked] = useState<boolean>(false);
-  const [isAnsweredCorrectly, setIsAnsweredCorrectly] = useState<boolean>(false);
   const [userAnswers, setUserAnswers] = useState<Record<number, UserAnswer>>({});
   const [showHint, setShowHint] = useState<boolean>(false);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
 
   // History modal state
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
+
+  // Sync study history with server on initial mount
+  useEffect(() => {
+    syncHistoryWithServer().catch(() => {});
+  }, []);
 
   // Gemini API Key modal & pending action states
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState<boolean>(false);
@@ -71,74 +74,56 @@ export default function App() {
     setApiKeyInfoMessage(null);
   }, []);
 
-  // Option selection
+  // Option selection: records user answer without revealing right/wrong
   const handleSelectOption = useCallback((index: number) => {
-    if (isChecked) return;
+    if (!currentQuestion) return;
     sound.playSelect();
     setSelectedOption(index);
-    setBearState('thinking');
-    setBearMessage('Bé đã chọn đáp án rồi! Hãy bấm nút KIỂM TRA ĐÁP ÁN bên dưới nhé! 🐾');
-  }, [isChecked]);
+    setBearState('normal');
+    setBearMessage('Bé đã chọn đáp án rồi! Hãy bấm "Câu tiếp theo" (hoặc "Nộp bài") để tiếp tục nhé! 🐾');
+  }, [currentQuestion]);
 
-  // Answer validation
-  const handleCheckAnswer = useCallback(() => {
-    if (isChecked || !currentQuestion) return;
+  // Advance to next question or show end screen and save history
+  const handleNextQuestion = useCallback(() => {
+    if (!currentQuestion) return;
 
     if (selectedOption === null) {
       setBearState('thinking');
-      setBearMessage('Bé hãy chọn một đáp án trước khi bấm kiểm tra nhé! 👆');
+      setBearMessage('Bé hãy chọn một đáp án trước khi bấm qua câu tiếp theo nhé! 👆');
       sound.playIncorrect();
       return;
     }
 
+    sound.playSelect();
     const isCorrect = selectedOption === currentQuestion.correctIndex;
-    setIsChecked(true);
-    setIsAnsweredCorrectly(isCorrect);
-    setUserAnswers((prev) => ({
-      ...prev,
+    const updatedAnswers = {
+      ...userAnswers,
       [currentQuestion.id]: {
         questionId: currentQuestion.id,
         selectedIndex: selectedOption,
         isCorrect,
       },
-    }));
+    };
+    setUserAnswers(updatedAnswers);
 
-    if (isCorrect) {
-      sound.playCorrect();
-      setScore((prev) => prev + 10);
-      setBearState('celebrate');
-      setBearMessage('Xuất sắc quá! Bé trả lời đúng rồi! 🎉 (+10 điểm)');
-
-      confetti({
-        particleCount: 80,
-        spread: 70,
-        origin: { y: 0.65 },
-        colors: ['#38BDF8', '#F59E0B', '#10B981', '#F43F5E', '#A855F7'],
-      });
-    } else {
-      sound.playIncorrect();
-      setBearState('thinking');
-      setBearMessage('Tiếc quá, chưa chính xác rồi! Bé xem đáp án đúng và lời giải chi tiết nhé! 💪');
-    }
-  }, [isChecked, selectedOption, currentQuestion]);
-
-  // Advance to next question or show end screen and save history
-  const handleNextQuestion = useCallback(() => {
-    sound.playSelect();
     if (isLastQuestion) {
-      // Calculate and save record to study history
-      if (currentLesson) {
-        const correctCount = questions.filter((q) => {
-          if (q.id === currentQuestion?.id) {
-            return isAnsweredCorrectly;
-          }
-          return userAnswers[q.id]?.isCorrect;
-        }).length;
+      // Calculate total correct answers and final score at the end of quiz
+      const correctCount = questions.filter((q) => {
+        if (q.id === currentQuestion.id) {
+          return isCorrect;
+        }
+        return updatedAnswers[q.id]?.isCorrect;
+      }).length;
 
+      const finalScore = correctCount * 10;
+      setScore(finalScore);
+
+      // Save record to study history
+      if (currentLesson) {
         saveStudyRecord({
           lessonId: currentLesson.id,
           lessonTitle: currentLesson.title,
-          score: score,
+          score: finalScore,
           totalScore: questions.length * 10,
           correctCount: correctCount,
           totalQuestions: questions.length,
@@ -146,23 +131,23 @@ export default function App() {
         });
       }
 
+      setBearState(finalScore >= (questions.length * 10 * 0.7) ? 'celebrate' : 'normal');
+      setBearMessage('Chúc mừng bé đã hoàn thành bài thi! Cùng xem bảng điểm và lời giải chi tiết bên dưới nhé! 🎉');
       setAppState('end');
     } else {
       setCurrentIdx((prev) => prev + 1);
       setSelectedOption(null);
-      setIsChecked(false);
-      setIsAnsweredCorrectly(false);
       setShowHint(false);
       setBearState('normal');
-      setBearMessage('Câu tiếp theo đang đợi bé! Đọc kỹ đề bài trước khi chọn nhé! 🚀');
+      setBearMessage('Câu tiếp theo đã sẵn sàng! Bé đọc kỹ đề bài trước khi chọn nhé! 🚀');
     }
-  }, [isLastQuestion, currentLesson, questions, currentQuestion, isAnsweredCorrectly, userAnswers, score, activeQuestionSource]);
+  }, [currentQuestion, selectedOption, userAnswers, isLastQuestion, questions, currentLesson, activeQuestionSource]);
 
   const handleToggleHint = useCallback(() => {
     setShowHint((prev) => {
       const nextState = !prev;
       if (nextState) {
-        setBearMessage('Bé đọc kỹ gợi ý nhé, đáp án ở rất gần rồi! 💡');
+        setBearMessage('Bé đọc kỹ gợi ý nhé, suy nghĩ cẩn thận để chọn đáp án đúng nhất! 💡');
       }
       return nextState;
     });
@@ -182,8 +167,6 @@ export default function App() {
     setCurrentIdx(0);
     setScore(0);
     setSelectedOption(null);
-    setIsChecked(false);
-    setIsAnsweredCorrectly(false);
     setUserAnswers({});
     setShowHint(false);
     setBearState('normal');
@@ -205,8 +188,6 @@ export default function App() {
       setCurrentIdx(0);
       setScore(0);
       setSelectedOption(null);
-      setIsChecked(false);
-      setIsAnsweredCorrectly(false);
       setUserAnswers({});
       setShowHint(false);
       setPendingAction(null);
@@ -228,8 +209,6 @@ export default function App() {
           setCurrentIdx(0);
           setScore(0);
           setSelectedOption(null);
-          setIsChecked(false);
-          setIsAnsweredCorrectly(false);
           setUserAnswers({});
           setShowHint(false);
           setPendingAction(null);
@@ -274,8 +253,6 @@ export default function App() {
       setCurrentIdx(0);
       setScore(0);
       setSelectedOption(null);
-      setIsChecked(false);
-      setIsAnsweredCorrectly(false);
       setUserAnswers({});
       setShowHint(false);
       setPendingAction(null);
@@ -292,8 +269,6 @@ export default function App() {
           setCurrentIdx(0);
           setScore(0);
           setSelectedOption(null);
-          setIsChecked(false);
-          setIsAnsweredCorrectly(false);
           setUserAnswers({});
           setShowHint(false);
           setPendingAction(null);
@@ -363,7 +338,7 @@ export default function App() {
 
       <main
         className={`relative z-10 w-full ${
-          appState === 'home' ? 'max-w-7xl' : 'max-w-3xl'
+          appState === 'home' ? 'max-w-7xl' : 'max-w-5xl lg:max-w-6xl'
         } mx-auto px-4 py-4 md:py-8 flex-1 flex flex-col transition-all duration-300`}
       >
         <Header
@@ -387,7 +362,7 @@ export default function App() {
         {appState === 'loading' && <LoadingScreen />}
 
         {appState === 'playing' && currentQuestion && (
-          <div className="flex-1 flex flex-col justify-center">
+          <div className="flex-1 flex flex-col justify-center w-full max-w-5xl mx-auto">
             <div className="mb-4">
               <BearCheerleader
                 state={bearState}
@@ -404,10 +379,7 @@ export default function App() {
             <QuestionCard
               question={currentQuestion}
               selectedOption={selectedOption}
-              isChecked={isChecked}
-              isAnsweredCorrectly={isAnsweredCorrectly}
               onSelectOption={handleSelectOption}
-              onCheckAnswer={handleCheckAnswer}
               onNextQuestion={handleNextQuestion}
               showHint={showHint}
               onToggleHint={handleToggleHint}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   History,
   Trophy,
@@ -11,10 +11,20 @@ import {
   ArrowRight,
   TrendingUp,
   RotateCcw,
+  Download,
+  Upload,
+  RefreshCw,
+  CheckCircle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { StudyRecord, Lesson } from '../types';
-import { getStudyHistory, clearStudyHistory } from '../utils/historyStorage';
+import {
+  getStudyHistory,
+  clearStudyHistory,
+  syncHistoryWithServer,
+  exportHistoryAsJson,
+  importHistoryFromJson,
+} from '../utils/historyStorage';
 import { sound } from '../utils/audio';
 
 interface HistoryModalProps {
@@ -30,11 +40,25 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
 }) => {
   const [records, setRecords] = useState<StudyRecord[]>([]);
   const [showConfirmClear, setShowConfirmClear] = useState<boolean>(false);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [notificationMsg, setNotificationMsg] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOpen) {
       setRecords(getStudyHistory());
       setShowConfirmClear(false);
+      setNotificationMsg(null);
+
+      // Auto-sync with server in background whenever opened
+      setIsSyncing(true);
+      syncHistoryWithServer()
+        .then((latest) => {
+          setRecords(latest);
+        })
+        .finally(() => {
+          setIsSyncing(false);
+        });
     }
   }, [isOpen]);
 
@@ -45,6 +69,53 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
     setRecords([]);
     setShowConfirmClear(false);
     sound.playSelect();
+  };
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    sound.playSelect();
+    try {
+      const merged = await syncHistoryWithServer();
+      setRecords(merged);
+      setNotificationMsg('Đã đồng bộ lịch sử thành công!');
+      setTimeout(() => setNotificationMsg(null), 3000);
+    } catch {
+      setNotificationMsg('Không thể kết nối máy chủ');
+      setTimeout(() => setNotificationMsg(null), 3000);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleExportBackup = () => {
+    sound.playSelect();
+    exportHistoryAsJson();
+    setNotificationMsg('Đã tải xuống file sao lưu lịch sử!');
+    setTimeout(() => setNotificationMsg(null), 3000);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      if (content) {
+        const success = importHistoryFromJson(content);
+        if (success) {
+          setRecords(getStudyHistory());
+          sound.playCorrect();
+          setNotificationMsg('Khôi phục lịch sử thành công!');
+        } else {
+          sound.playIncorrect();
+          setNotificationMsg('File không đúng định dạng sao lưu!');
+        }
+        setTimeout(() => setNotificationMsg(null), 3500);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   const handleReplay = (rec: StudyRecord) => {
@@ -108,7 +179,7 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                   Lịch Sử Học Tập & Điểm Số 📜
                 </h3>
                 <p className="text-xs text-amber-100 font-medium">
-                  Ghi nhận quá trình ôn tập và kết quả của bé
+                  Tự động sao lưu kép: Lưu trên trình duyệt & Máy chủ
                 </p>
               </div>
             </div>
@@ -120,6 +191,56 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
             >
               <X className="w-5 h-5" />
             </button>
+          </div>
+
+          {/* Backup & Sync Action Bar */}
+          <div className="px-5 py-2.5 bg-amber-50/90 border-b border-amber-200/80 flex items-center justify-between gap-2 flex-wrap text-xs">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleManualSync}
+                disabled={isSyncing}
+                title="Đồng bộ lại với máy chủ"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-amber-300 rounded-xl font-bold text-amber-900 hover:bg-amber-100/70 transition-colors cursor-pointer shadow-xs"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-amber-600 ${isSyncing ? 'animate-spin' : ''}`} />
+                <span>{isSyncing ? 'Đang đồng bộ...' : 'Đồng bộ máy chủ'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExportBackup}
+                title="Tải file sao lưu về máy tính"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-amber-300 rounded-xl font-bold text-amber-900 hover:bg-amber-100/70 transition-colors cursor-pointer shadow-xs"
+              >
+                <Download className="w-3.5 h-3.5 text-amber-600" />
+                <span>Tải sao lưu</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                title="Nhập file sao lưu từ máy"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-amber-300 rounded-xl font-bold text-amber-900 hover:bg-amber-100/70 transition-colors cursor-pointer shadow-xs"
+              >
+                <Upload className="w-3.5 h-3.5 text-amber-600" />
+                <span>Nạp sao lưu</span>
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+            </div>
+
+            {notificationMsg && (
+              <span className="font-extrabold text-emerald-700 flex items-center gap-1 bg-emerald-100/80 px-2.5 py-1 rounded-lg">
+                <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                {notificationMsg}
+              </span>
+            )}
           </div>
 
           {/* Body */}
@@ -138,19 +259,19 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
 
                 <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 text-center">
                   <div className="text-xl md:text-2xl font-black text-emerald-600">
-                    {averagePercentage}%
+                    {perfectScores}
                   </div>
                   <div className="text-[11px] font-bold text-emerald-900 uppercase">
-                    Tỉ lệ đúng TB
+                    Điểm 10 Tuyệt Đối
                   </div>
                 </div>
 
                 <div className="bg-sky-50 border border-sky-200 rounded-2xl p-3 text-center">
                   <div className="text-xl md:text-2xl font-black text-sky-600">
-                    {perfectScores} 🌟
+                    {averagePercentage}%
                   </div>
                   <div className="text-[11px] font-bold text-sky-900 uppercase">
-                    Điểm 10 tuyệt đối
+                    Tỉ lệ đúng TB
                   </div>
                 </div>
               </div>
@@ -158,11 +279,13 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
 
             {/* List of Sessions */}
             {records.length === 0 ? (
-              <div className="p-8 text-center bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
-                <p className="text-4xl mb-2">⭐</p>
-                <h4 className="font-black text-slate-700 text-base">Bé chưa có lịch sử làm bài nào</h4>
-                <p className="text-slate-500 text-xs md:text-sm mt-1">
-                  Hãy chọn một bài học từ Mục lục và hoàn thành 10 câu hỏi để xem điểm số tại đây nhé!
+              <div className="py-12 text-center text-slate-400">
+                <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-slate-100 flex items-center justify-center text-slate-300">
+                  <BookOpen className="w-8 h-8" />
+                </div>
+                <p className="font-bold text-slate-600 text-base">Bé chưa có lượt làm bài nào!</p>
+                <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+                  Hãy chọn một bài học từ mục lục để hoàn thành thử thách và nhận điểm số đầu tiên nhé!
                 </p>
               </div>
             ) : (
@@ -172,29 +295,28 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
                     rec.totalQuestions > 0
                       ? Math.round((rec.correctCount / rec.totalQuestions) * 100)
                       : 0;
-
                   const isHigh = percentage >= 80;
                   const isMedium = percentage >= 50 && percentage < 80;
 
                   return (
                     <div
                       key={rec.id}
-                      className="p-3.5 rounded-2xl bg-white border border-slate-200 shadow-xs hover:shadow-md transition-all flex items-center justify-between gap-3"
+                      className="bg-white hover:bg-slate-50 border-2 border-slate-100 hover:border-amber-200 rounded-2xl p-3.5 transition-all flex items-center justify-between gap-3 shadow-xs"
                     >
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap mb-1">
-                          <span className="font-bold text-xs md:text-sm text-slate-800 truncate">
-                            {rec.lessonTitle}
+                        <div className="flex items-center gap-2 mb-1">
+                          <span
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
+                              rec.source === 'ai'
+                                ? 'bg-purple-100 text-purple-700'
+                                : 'bg-sky-100 text-sky-700'
+                            }`}
+                          >
+                            {rec.source === 'ai' ? 'Trí tuệ nhân tạo' : 'Đề chuẩn SGK'}
                           </span>
-                          {rec.source === 'ai' ? (
-                            <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-sky-100 text-sky-700 flex items-center gap-1">
-                              <Sparkles className="w-3 h-3 text-amber-500" /> AI
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-100 text-emerald-700 flex items-center gap-1">
-                              <BookOpen className="w-3 h-3 text-emerald-600" /> SGK
-                            </span>
-                          )}
+                          <h4 className="font-black text-slate-800 text-sm md:text-base truncate">
+                            {rec.lessonTitle}
+                          </h4>
                         </div>
 
                         <div className="flex items-center gap-3 text-xs text-slate-500 font-medium">

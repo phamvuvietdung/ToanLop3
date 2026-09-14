@@ -337,7 +337,7 @@ export function getFallbackQuestionsForTopic(topic: string, count: number = 10):
     }
 
     // 8. DẠNG: BẢNG NHÂN / BẢNG CHIA (2 đến 9, hoặc nhân chia 2, 3 chữ số)
-    else if (normalized.includes('nhân') || normalized.includes('chia') || normalized.includes('phép nhân') || normalized.includes('phép chia')) {
+    else if (normalized.includes('nhân') || normalized.includes('chia') || normalized.includes('phép nhân') || normalized.includes('phép chia') || normalized.includes('bảng nhân') || normalized.includes('bảng chia')) {
       categoryIcon = '🔢';
       stageName = `Màn ${i}: Siêu sao tính nhẩm`;
 
@@ -367,36 +367,83 @@ export function getFallbackQuestionsForTopic(topic: string, count: number = 10):
           explanation = `Ta có: ${dividend} : ${mult} = ${quot}.`;
         }
       } else {
-        // Bảng nhân chia cơ bản
-        let baseNum = 6;
-        if (normalized.includes('6')) baseNum = 6;
+        // Bảng nhân chia cơ bản (Nhận diện chính xác từng số 2, 3, 4, 5, 6, 7, 8, 9)
+        let baseNum = 4;
+        if (/\b4\b|bảng nhân 4|bảng chia 4|cửu chương 4/.test(normalized)) baseNum = 4;
+        else if (/\b3\b|bảng nhân 3|bảng chia 3|cửu chương 3/.test(normalized)) baseNum = 3;
+        else if (/\b2\b|bảng nhân 2|bảng chia 2|cửu chương 2/.test(normalized)) baseNum = 2;
+        else if (/\b5\b|bảng nhân 5|bảng chia 5|cửu chương 5/.test(normalized)) baseNum = 5;
+        else if (/\b6\b|bảng nhân 6|bảng chia 6|cửu chương 6/.test(normalized)) baseNum = 6;
+        else if (/\b7\b|bảng nhân 7|bảng chia 7|cửu chương 7/.test(normalized)) baseNum = 7;
+        else if (/\b8\b|bảng nhân 8|bảng chia 8|cửu chương 8/.test(normalized)) baseNum = 8;
+        else if (/\b9\b|bảng nhân 9|bảng chia 9|cửu chương 9/.test(normalized)) baseNum = 9;
+        else if (normalized.includes('4')) baseNum = 4;
+        else if (normalized.includes('3')) baseNum = 3;
+        else if (normalized.includes('2')) baseNum = 2;
+        else if (normalized.includes('5')) baseNum = 5;
+        else if (normalized.includes('6')) baseNum = 6;
         else if (normalized.includes('7')) baseNum = 7;
         else if (normalized.includes('8')) baseNum = 8;
         else if (normalized.includes('9')) baseNum = 9;
-        else if (normalized.includes('2')) baseNum = 2;
-        else if (normalized.includes('3')) baseNum = 3;
-        else if (normalized.includes('4')) baseNum = 4;
-        else if (normalized.includes('5')) baseNum = 5;
-        else baseNum = rand(6, 9);
+        else baseNum = rand(2, 9);
 
-        if (i % 2 === 1) {
-          const k = rand(3, 9);
+        // Đa dạng hóa câu hỏi: phép tính nhẩm, điền số, bài toán thực tế
+        const subType = i % 3;
+
+        if (subType === 0) {
+          // Phép nhân
+          const k = rand(2, 9);
           const ans = baseNum * k;
-          question = `Kết quả của phép tính ${baseNum} × ${k} = ?`;
-          const opts = [`${ans}`, `${ans - baseNum}`, `${ans + baseNum}`, `${ans - 1}`].sort(() => Math.random() - 0.5);
+          question = `Tính kết quả của phép tính: ${baseNum} × ${k} = ?`;
+          const opts = [`${ans}`, `${ans - baseNum > 0 ? ans - baseNum : ans + 2}`, `${ans + baseNum}`, `${ans + 1}`].sort(() => Math.random() - 0.5);
           correctIndex = opts.indexOf(`${ans}`);
           options = opts;
           hint = `Bé nhớ lại bảng nhân ${baseNum}: ${baseNum} nhân ${k} bằng bao nhiêu nhé!`;
           explanation = `Ta có: ${baseNum} × ${k} = ${ans}.`;
-        } else {
-          const k = rand(3, 9);
+        } else if (subType === 1) {
+          // Phép chia
+          const k = rand(2, 9);
           const dividend = baseNum * k;
-          question = `Kết quả của phép chia ${dividend} : ${baseNum} là:`;
-          const opts = [`${k}`, `${k + 1}`, `${k - 1}`, `${k + 2}`].sort(() => Math.random() - 0.5);
+          question = `Kết quả của phép chia: ${dividend} : ${baseNum} là:`;
+          const opts = [`${k}`, `${k + 1}`, `${k > 2 ? k - 1 : k + 3}`, `${k + 2}`].sort(() => Math.random() - 0.5);
           correctIndex = opts.indexOf(`${k}`);
           options = opts;
-          hint = `Bé nhẩm xem: ${baseNum} nhân mấy thì bằng ${dividend}?`;
+          hint = `Bé nhẩm xem: ${baseNum} nhân với mấy thì bằng ${dividend}?`;
           explanation = `Ta có: ${dividend} : ${baseNum} = ${k} (vì ${baseNum} × ${k} = ${dividend}).`;
+        } else {
+          // Bài toán có lời văn ứng dụng thực tế về bảng nhân / chia
+          const k = rand(3, 8);
+          const total = baseNum * k;
+          const objectName = pick(['hộp bút', 'gói bánh', 'túi táo', 'bình hoa']);
+          const unit = pick(['chiếc bút', 'cái bánh', 'quả táo', 'bông hoa']);
+
+          if (i % 2 === 1) {
+            question = `Có ${k} ${objectName}, mỗi ${objectName} có ${baseNum} ${unit}. Hỏi có tất cả bao nhiêu ${unit}?`;
+            const ansStr = `${total} ${unit}`;
+            const opts = [
+              ansStr,
+              `${total - baseNum} ${unit}`,
+              `${total + baseNum} ${unit}`,
+              `${k + baseNum} ${unit}`,
+            ].sort(() => Math.random() - 0.5);
+            correctIndex = opts.indexOf(ansStr);
+            options = opts;
+            hint = `Muốn tìm tất cả, bé lấy số ${unit} trong 1 hộp nhân với số hộp: ${baseNum} × ${k}.`;
+            explanation = `Có tất cả số ${unit} là: ${baseNum} × ${k} = ${total} (${unit}).`;
+          } else {
+            question = `Cô giáo có ${total} ${unit} chia đều cho các bạn, mỗi bạn được ${baseNum} ${unit}. Hỏi có bao nhiêu bạn được chia?`;
+            const ansStr = `${k} bạn`;
+            const opts = [
+              ansStr,
+              `${k + 1} bạn`,
+              `${k > 2 ? k - 1 : k + 2} bạn`,
+              `${k + 3} bạn`,
+            ].sort(() => Math.random() - 0.5);
+            correctIndex = opts.indexOf(ansStr);
+            options = opts;
+            hint = `Bé lấy tổng số chia cho số phần mỗi bạn nhận được: ${total} : ${baseNum}.`;
+            explanation = `Số bạn được chia là: ${total} : ${baseNum} = ${k} (bạn).`;
+          }
         }
       }
     }

@@ -6,6 +6,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import { getFallbackQuestionsForTopic } from "./server/fallbackQuestions";
+import { readServerHistory, writeServerHistory, ServerStudyRecord } from "./server/historyStorage";
 
 function getAIClient(apiKey?: string) {
   const key = (apiKey && typeof apiKey === "string" ? apiKey.trim() : "") || process.env.GEMINI_API_KEY || "";
@@ -27,19 +28,20 @@ const topicCache = new Map<string, { timestamp: number; questions: any[] }>();
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 async function generateWithGemini(topic: string, count: number, modelName: string, apiKey?: string) {
-  const prompt = `Bạn là một giáo viên Toán lớp 3 nhiệt huyết. Nhiệm vụ của bạn là tạo ra chính xác ${count} câu hỏi trắc nghiệm Toán học bám sát nội dung bài học: "${topic}" trong Sách giáo khoa Toán 3 (Kết nối tri thức với cuộc sống).
+  const prompt = `Bạn là một giáo viên Toán lớp 3 nhiệt huyết. Nhiệm vụ của bạn là tạo ra chính xác ${count} câu hỏi trắc nghiệm Toán học bám sát nội dung bài học: "${topic}" trong Sách giáo khoa Toán 3 (Bộ sách Kết nối tri thức với cuộc sống).
 
-ĐIỀU KIỆN QUAN TRỌNG: 
-1. Sử dụng các con số NGẪU NHIÊN khác nhau trong mỗi câu hỏi để học sinh có thể ôn tập nhiều lần bài học này mà không bị trùng lặp đề.
-2. Các câu hỏi phải có độ khó đa dạng. Có câu hỏi tính toán, có câu hỏi giải toán có lời văn (liên quan đến thực tế).
+ĐIỀU KIỆN BẮT BUỘC VỀ NỘI DUNG BÀI HỌC: 
+1. ĐÚNG CHỦ ĐỀ: Nếu bài học là Bảng nhân/chia nào (Ví dụ: "Bảng nhân 4, bảng chia 4") thì TẤT CẢ các câu hỏi tính toán và bài toán đố phải bám sát chính xác con số đó (ví dụ số 4), tuyệt đối không nhầm sang bảng nhân chia khác.
+2. SỐ LIỆU ĐA DẠNG: Sử dụng các con số ngẫu nhiên khác nhau trong mỗi câu hỏi để học sinh có thể ôn tập nhiều lần bài học này mà không bị trùng lặp đề.
+3. ĐA DẠNG CÂU HỎI: Có câu hỏi tính nhẩm nhanh, có câu hỏi bài toán đố có lời văn gắn với thực tế đời sống.
 
 Tuân thủ định dạng JSON nghiêm ngặt. Trả về một mảng gồm ${count} object, mỗi object có cấu trúc sau:
 - id: số thứ tự (1-${count})
-- stageName: Tên màn chơi thú vị, ngắn gọn (VD: "Màn 1: Khu rừng bí ẩn")
+- stageName: Tên màn chơi thú vị, ngắn gọn (VD: "Màn 1: Thử tài tính nhẩm")
 - category: Tên dạng toán (VD: "${topic}")
 - categoryIcon: 1 emoji đại diện phù hợp
-- question: Nội dung câu hỏi rõ ràng, dễ hiểu với học sinh lớp 3
-- options: Mảng chứa chính xác 4 chuỗi đáp án (VD: ["10", "12", "15", "20"]). Cần ghi rõ đơn vị nếu có (VD: "12 quả").
+- question: Nội dung câu hỏi rõ ràng, chuẩn ngữ pháp tiếng Việt dành cho học sinh lớp 3
+- options: Mảng chứa chính xác 4 chuỗi đáp án (VD: ["16", "20", "24", "28"]). Cần ghi rõ đơn vị nếu có (VD: "16 bông hoa").
 - correctIndex: Vị trí của đáp án đúng trong mảng options (0, 1, 2, hoặc 3)
 - hint: Câu gợi ý từng bước, khơi gợi tư duy cho bé (tuyệt đối không nói thẳng đáp án)
 - explanation: Lời giải chi tiết
@@ -218,6 +220,79 @@ async function startServer() {
         return res.status(429).json({ valid: false, message: "Khóa đúng nhưng hiện hết hạn mức (429)" });
       }
       return res.status(400).json({ valid: false, message: "Khóa API không hợp lệ hoặc chưa được kích hoạt" });
+    }
+  });
+
+  // History sync endpoints to preserve study history across deploys & browsers
+  app.get("/api/history", (req, res) => {
+    try {
+      const history = readServerHistory();
+      return res.json({ history });
+    } catch (err: any) {
+      return res.status(500).json({ error: "Không thể lấy lịch sử", history: [] });
+    }
+  });
+
+  app.post("/api/history", (req, res) => {
+    try {
+      const record: ServerStudyRecord = req.body;
+      if (!record || !record.lessonId) {
+        return res.status(400).json({ error: "Dữ liệu không hợp lệ" });
+      }
+      const history = readServerHistory();
+      // Deduplicate by ID
+      const existingIdx = history.findIndex((h) => h.id === record.id);
+      let updated: ServerStudyRecord[];
+      if (existingIdx >= 0) {
+        history[existingIdx] = record;
+        updated = history;
+      } else {
+        updated = [record, ...history].slice(0, 100);
+      }
+      writeServerHistory(updated);
+      return res.json({ success: true, history: updated });
+    } catch (err: any) {
+      return res.status(500).json({ error: "Không thể lưu lịch sử" });
+    }
+  });
+
+  app.post("/api/history/sync", (req, res) => {
+    try {
+      const { localHistory } = req.body;
+      const serverHistory = readServerHistory();
+      
+      const recordMap = new Map<string, ServerStudyRecord>();
+      
+      // Load server records first
+      for (const r of serverHistory) {
+        recordMap.set(r.id, r);
+      }
+      // Merge client records
+      if (Array.isArray(localHistory)) {
+        for (const r of localHistory) {
+          if (r && r.id && (!recordMap.has(r.id) || (r.timestamp || 0) > (recordMap.get(r.id)!.timestamp || 0))) {
+            recordMap.set(r.id, r);
+          }
+        }
+      }
+
+      const merged = Array.from(recordMap.values())
+        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+        .slice(0, 100);
+
+      writeServerHistory(merged);
+      return res.json({ success: true, history: merged });
+    } catch (err: any) {
+      return res.status(500).json({ error: "Không thể đồng bộ lịch sử" });
+    }
+  });
+
+  app.delete("/api/history", (req, res) => {
+    try {
+      writeServerHistory([]);
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: "Không thể xóa lịch sử" });
     }
   });
 
